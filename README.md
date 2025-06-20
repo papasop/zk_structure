@@ -12,3 +12,8 @@
 ## To verify:
 ```bash
 snarkjs groth16 verify verification_key.json public.json proof.json
+
+
+
+ZK-Structure: A Zero-Knowledge System for Structural Consistency Proofs
+https://doi.org/10.5281/zenodo.15705567
