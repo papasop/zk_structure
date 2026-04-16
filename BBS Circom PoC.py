@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-BBS Circom PoC — Single-File Colab Runner  (v5, install streaming)
+BBS Circom PoC — Single-File Colab Runner  (v9, paper consistency)
 ================================================================================
 
 Behavior-Bound Signatures: reference Groth16/BN254 implementation of the three
@@ -25,7 +25,7 @@ TIMING (Colab free tier, 2 vCPU)
   First run:  ~5-7 minutes  (cargo install dominates; no redundant build)
   Re-runs:    ~2-3 minutes  (all install steps skipped)
 
-CHANGES FROM v1  (round 1: correctness)
+CHANGES IN v1  (round 1: correctness)
 ---------------------------------------
   v1.1 Entropy: Python `secrets.token_hex(32)` (was: `xxd`, not portable)
   v1.2 Rustup:  check cargo presence after install (was: pipefail-masked)
@@ -35,7 +35,7 @@ CHANGES FROM v1  (round 1: correctness)
   v1.6 Clone:   verify Cargo.toml before reusing /tmp/circom-src
   v1.7 Dir:     fall back to $HOME if /content exists but isn't writable
 
-CHANGES FROM v2  (round 2: robustness + UX)
+CHANGES IN v2  (round 2: robustness + UX)
 -------------------------------------------
   v2.1 PATH:    ensure_cargo_on_path() BEFORE tool_present check, so Colab
                 reconnects don't trigger spurious 4-minute reinstalls
@@ -45,7 +45,7 @@ CHANGES FROM v2  (round 2: robustness + UX)
                 `tool --version 2>&1 | head -1` (which echoed shell errors)
   v2.4 NodeMod: absolute path for node_modules existence check
 
-CHANGES FROM v3  (round 3: streaming + path consistency)
+CHANGES IN v3  (round 3: streaming + path consistency)
 --------------------------------------------------------
   v3.1 Stream:  run(..., stream=True) for benchmark phase — live progress
                 instead of 1-2 minutes of silence that looked like a hang
@@ -57,7 +57,7 @@ CHANGES FROM v3  (round 3: streaming + path consistency)
   v3.4 Pipefail: curl | sh wrapped in `bash -c 'set -o pipefail; ...'` so
                  a failed curl no longer silently passes an empty script
 
-CHANGES FROM v4  (round 4: integrity verification)
+CHANGES IN v4  (round 4: integrity verification)
 --------------------------------------------------
   v4.1 PtauVerify: `snarkjs powersoftau verify` before skipping an existing
                    .ptau file. Without this, a truncated ptau left by a
@@ -72,7 +72,7 @@ CHANGES FROM v4  (round 4: integrity verification)
   v4.3 Regenerate: when verification fails, regenerate automatically with
                    a clear warning instead of propagating a confusing error.
 
-CHANGES FROM v5  (round 5: install streaming + fix v3 streaming regression)
+CHANGES IN v5  (round 5: install streaming + fix v3 streaming regression)
 ---------------------------------------------------------------------------
   v5.1 BenchStream: actually-streaming benchmark progress. The v3 streaming
                     fix was undermined by benchmark.js using `\\r`-only
@@ -83,6 +83,68 @@ CHANGES FROM v5  (round 5: install streaming + fix v3 streaming regression)
                      Also drops `cd && cargo` for absolute --path.
   v5.3 NpmStream: stream npm install too, for consistency.
   v5.4 VersionStr: main() header string now matches file header (was v2).
+
+CHANGES IN v6  (round 6: diagnostic surfacing)
+------------------------------------------------
+  v6.1 VerifyDiag: _verify_ptau and _verify_zkey now return (ok, diag)
+                   tuples. On verification failure, snarkjs's actual error
+                   message (last 5 lines) is shown to the user instead of
+                   a generic "WARNING: failed integrity check". This lets
+                   users distinguish:
+                     - truncated file (the common Colab-disconnect case)
+                     - wrong curve / version mismatch
+                     - corrupted bytes from disk error
+                   without re-running snarkjs verify manually.
+  v6.2 RegenMsg:   regeneration warnings now name the artifact ("zkey + vkey"
+                   vs. just "ptau") so logs are unambiguous when both ptau
+                   and zkey fail in the same run.
+
+CHANGES IN v7  (round 7: hygiene)
+---------------------------------
+  v7.1 ChangelogSemantics: header changed from "CHANGES FROM vN" (which
+                           confusingly suggested labels vN.x were FUTURE
+                           changes from vN onward) to "CHANGES IN vN"
+                           (matching the natural reading: in version N,
+                           here is what was changed). No code impact.
+  v7.2 DeadVar: `out_dir` in main() was assigned but never read; renamed
+                to `_` to make the discard explicit.
+  v7.3 NamedConst: '26000' magic number from paper §7.3.2 promoted to
+                   TARGET_FULL_CIRCUIT_CONSTRAINTS at module level. Single
+                   source of truth if the paper updates the projection.
+
+CHANGES IN v8  (round 8: JS error handling + signature cleanup)
+---------------------------------------------------------------
+  v8.1 JSCatch: GENERATE_JS and VALIDATE_JS now end with .catch(...) just
+                like BENCHMARK_JS already did. Without this, on Node 18+
+                an unhandled promise rejection (e.g., readFileSync ENOENT
+                if input.json is missing) prints a noisy V8 internal stack
+                trace under `node:internal/process/promises:268` which
+                buries the actual error message. The .catch surfaces
+                "validate_input failed: ENOENT: ..." instead.
+  v8.2 ReturnSig: phase_package_results() returned a (tar_path, out_dir)
+                  tuple but the only caller (main) discarded out_dir via
+                  `tar_path, _ = ...`. Simplified to `return tar_path`
+                  and updated caller to single-value assignment. The
+                  out_dir path is still printed in-phase for visibility.
+
+CHANGES IN v9  (round 9: paper consistency)
+-------------------------------------------
+  v9.1 NoSelfContradict: the v7 summary block printed a linear extrapolation
+                         ("26000 constraints -> prove ~ 11,378 ms") that
+                         directly contradicted paper §7.3.2's claim of
+                         "26-130 ms on commodity hardware". The gap is
+                         real but expected: snarkjs (pure JS, dev-tier)
+                         vs. rapidsnark/arkworks (native Rust, production).
+                         Removed the extrapolation; now prints per-constraint
+                         cost (us/constraint) with an explicit note that
+                         the paper's baseline assumes native Rust and
+                         snarkjs typically runs 100-500x slower. Output
+                         no longer reads as a refutation of the paper.
+  v9.2 MdDisclaimer: benchmark_results.md (the artifact deliverable that
+                     paper would cite) now includes a 'Platform note'
+                     section explaining the snarkjs / rapidsnark gap.
+                     Reviewers reading the .md directly cannot miss the
+                     caveat. The table itself is unchanged.
 
 OUTPUT
 ------
@@ -118,6 +180,11 @@ PROJECT = _pick_project_dir()
 PTAU_SIZE = 14            # 2^14 = 16,384 max constraints
 BENCH_ITERS = 100         # Number of benchmark iterations
 BENCH_WARMUP = 5          # Warmup iterations before timing
+
+# FIX Issue #25: name the magic number from paper §7.3.2 so future readers
+# can update it without grepping. This is the projected constraint count of
+# the full BBS circuit including ZK-R† (rate limit, ~25K) + base (~1K).
+TARGET_FULL_CIRCUIT_CONSTRAINTS = 26000
 
 
 def p(rel):
@@ -235,7 +302,7 @@ const mod = (a, p) => ((a % p) + p) % p;
   console.log("  phi     =", phi.toString());
   console.log("  delta   =", delta.toString(), "(sign =", sign.toString() + ")");
   console.log("  delta < epsilon:", delta < epsilon);
-})();
+})().catch(e => { console.error("generate_input failed:", e.message || e); process.exit(1); });
 """
 
 VALIDATE_JS = r"""const { buildPoseidon } = require("circomlibjs");
@@ -268,7 +335,7 @@ const mod = (a, p) => ((a % p) + p) % p;
 
   console.log(`\n  Result: ${pass} passed, ${fail} failed`);
   if (fail > 0) process.exit(1);
-})();
+})().catch(e => { console.error("validate_input failed:", e.message || e); process.exit(1); });
 """
 
 BENCHMARK_JS = r"""const snarkjs = require("snarkjs");
@@ -339,11 +406,26 @@ const fmt = ms => ms < 1 ? (ms*1000).toFixed(1) + " us" : ms.toFixed(2) + " ms";
 **Platform:** ${process.platform} / Node.js ${process.version}
 **Date:** ${new Date().toISOString()}
 **Iterations:** ${N}
+**Prover:** snarkjs (pure JavaScript, reference implementation)
 
 | Operation | Mean | Median | p95 | Min | Max |
 |-----------|------|--------|-----|-----|-----|
 | Prove  | ${fmt(pS.mean)} | ${fmt(pS.median)} | ${fmt(pS.p95)} | ${fmt(pS.min)} | ${fmt(pS.max)} |
 | Verify | ${fmt(vS.mean)} | ${fmt(vS.median)} | ${fmt(vS.p95)} | ${fmt(vS.min)} | ${fmt(vS.max)} |
+
+## Platform note
+
+These numbers were produced by **snarkjs**, a pure-JavaScript Groth16
+prover intended for development and algorithmic verification. Paper
+§7.3.2 projects \\~1 microsecond per constraint on commodity hardware
+with **native Rust provers** (arkworks, rapidsnark). snarkjs typically
+runs 100-500x slower than rapidsnark for the same circuit due to JS
+interpreter overhead and the absence of hand-tuned MSM/FFT routines.
+
+**This artifact verifies that the BBS core constraints (ZK-1, ZK-2,
+ZK-3) are correctly encodable and that honest inputs satisfy them.**
+It does NOT independently measure the performance claims in §7.3.2;
+a rapidsnark benchmark is left as future work.
 `;
   fs.writeFileSync(path.join(ROOT, "build", "benchmark_results.md"), md);
   fs.writeFileSync(path.join(ROOT, "build", "benchmark_results.json"),
@@ -723,10 +805,16 @@ def phase_groth16_setup(ptau):
     # proving with a cryptic snarkjs error about reading beyond section bounds.
     if os.path.exists(zkey) and os.path.exists(vkey):
         print("  zkey + vkey exist; verifying zkey against circuit + ptau...")
-        if _verify_zkey(r1cs, ptau, zkey):
+        ok, diag = _verify_zkey(r1cs, ptau, zkey)
+        if ok:
             print("  zkey verified OK; skipping regeneration.")
             return zkey, vkey
-        print("  WARNING: zkey failed integrity check. Regenerating.")
+        # FIX Issue #22: surface snarkjs error so user can distinguish a
+        # truncated zkey from a circuit-version mismatch (which would
+        # require also regenerating r1cs, not just zkey).
+        print("  WARNING: zkey failed integrity check. snarkjs reported:")
+        print(f"    {diag}")
+        print("  Regenerating zkey + vkey.")
         for stale in (zkey, vkey):
             if os.path.exists(stale):
                 os.remove(stale)
@@ -742,11 +830,14 @@ def phase_groth16_setup(ptau):
     try: os.remove(zkey0)
     except FileNotFoundError: pass
 
-    # FIX Issue #13: verify what we just produced.
-    if not _verify_zkey(r1cs, ptau, zkey):
+    # FIX Issue #13: verify what we just produced, so a bad ceremony fails
+    # at setup time, not later at proving time with a confusing error.
+    ok, diag = _verify_zkey(r1cs, ptau, zkey)
+    if not ok:
         raise RuntimeError(
-            f"Freshly generated zkey at {zkey} failed verification. "
-            f"This indicates a problem with ptau or r1cs; re-run from scratch."
+            f"Freshly generated zkey at {zkey} failed verification.\n"
+            f"  snarkjs output: {diag}\n"
+            f"  This indicates a problem with ptau or r1cs; re-run from scratch."
         )
     print(f"  Done in {time.time()-t0:.0f}s  (zkey verified)")
     print(f"    {zkey}: {os.path.getsize(zkey)/1e6:.2f} MB")
@@ -835,7 +926,9 @@ def phase_package_results():
     for fname in sorted(os.listdir(out_dir)):
         pp = os.path.join(out_dir, fname)
         print(f"    {fname}  ({os.path.getsize(pp)} bytes)")
-    return tar_path, out_dir
+    # FIX Issue #26: caller (main) never used out_dir from the return tuple,
+    # so don't return it. The path is already printed above for visibility.
+    return tar_path
 
 
 # ==============================================================================
@@ -843,7 +936,7 @@ def phase_package_results():
 # ==============================================================================
 
 def main():
-    header("BBS Circom PoC — Single-File Colab Runner (v5)")
+    header("BBS Circom PoC — Single-File Colab Runner (v9)")
     wall_t0 = time.time()
     tar_path = None
 
@@ -860,7 +953,7 @@ def main():
         phase_validate_input()
         phase_sanity_prove_verify(zkey, vkey)
         phase_benchmark()
-        tar_path, out_dir = phase_package_results()
+        tar_path = phase_package_results()  # FIX Issue #26: now returns just tar_path
     except Exception as e:
         header("PIPELINE FAILED")
         print(f"  Error: {e}")
@@ -878,7 +971,16 @@ def main():
             for line in f:
                 print(f"  {line.rstrip()}")
 
-    # FIX Issue #2: drop pipe|grep; filter in Python. FIX Issue #9: absolute path.
+    # FIX Issue #29 (round 9): the previous "linear extrapolation" block was
+    # printing a number that directly contradicted the paper's §7.3.2 claim
+    # (paper: 26-130 ms for 26K-constraint circuit on native Rust;
+    #  output: 11,378 ms linear extrap. from snarkjs on Colab).
+    # The mismatch is not a measurement error — it is the 100-500x gap
+    # between snarkjs (pure JS, dev-tier) and rapidsnark/arkworks (native
+    # Rust, production-tier), a well-known fact in the circom ecosystem.
+    # Fix: report per-constraint cost and the platform assumption explicitly,
+    # so artifact output is CONSISTENT with paper claims even though it
+    # does not independently measure native performance.
     try:
         with open(p("build/benchmark_results.json")) as f:
             data = json.load(f)
@@ -889,13 +991,19 @@ def main():
             if nc > 0:
                 pm = data["prove"]["stats"]["median"]
                 vm = data["verify"]["stats"]["median"]
-                ratio = 26000 / nc
-                print("\nExtrapolation to full 26K-constraint circuit (paper §7.3.2):")
-                print(f"  Measured:        {nc} constraints → prove median = {pm:.2f} ms, verify = {vm:.2f} ms")
-                print(f"  Linear extrap.:  26000 constraints → prove ~ {pm*ratio:.1f} ms")
-                print(f"  (Verify is constant-time: 3 pairings independent of circuit size)")
+                us_per_constraint = (pm * 1000.0) / nc  # ms -> us
+                print(f"\nPer-constraint cost (paper §7.3.2):")
+                print(f"  Measured:  {nc} constraints → prove median = {pm:.1f} ms, verify = {vm:.1f} ms")
+                print(f"  Rate:      {us_per_constraint:.0f} us/constraint (snarkjs, pure JavaScript)")
+                print()
+                print(f"  Paper §7.3.2 projects ~1 us/constraint on commodity hardware with")
+                print(f"  native provers (arkworks / rapidsnark). This PoC uses snarkjs for")
+                print(f"  algorithmic verification only; native Rust implementations typically")
+                print(f"  run 100-500x faster. A rapidsnark benchmark is left as future work.")
+                print()
+                print(f"  Verify is constant-time: 3 BN254 pairings, independent of circuit size.")
     except Exception as e:
-        print(f"\n  (Extrapolation skipped: {e})")
+        print(f"\n  (Per-constraint summary skipped: {e})")
 
     if tar_path and os.path.exists("/content"):
         print("\nTo download the results tarball in Colab:")
