@@ -1,23 +1,20 @@
-\documentclass[10pt]{article}
+\documentclass[11pt]{article}
 \usepackage[margin=1in]{geometry}
 \usepackage{amsmath,amssymb,amsthm}
-\usepackage{booktabs}
-\usepackage{algorithm}
-\usepackage{algpseudocode}
-\usepackage{hyperref}
 \usepackage{enumitem}
+\usepackage{hyperref}
+\usepackage{booktabs}
 
 \newtheorem{theorem}{Theorem}
-\newtheorem{proposition}[theorem]{Proposition}
-\newtheorem{corollary}[theorem]{Corollary}
 \newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
 \theoremstyle{definition}
 \newtheorem{definition}[theorem]{Definition}
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
 
 \title{Behavior-Bound Signatures:\\
-Cryptographic Policy Enforcement from Zero-Knowledge Soundness}
+Cryptographic Bounds on Autonomous Agent Behavior}
 \author{Y.Y.N. Li}
 \date{}
 
@@ -25,1366 +22,505 @@ Cryptographic Policy Enforcement from Zero-Knowledge Soundness}
 \maketitle
 
 \begin{abstract}
-Every standard signature scheme enforces one property: only the key
-holder can sign. What the key holder signs is unconstrained. Policy
-enforcement---spending limits, rate limits, access control---lives in
-smart contracts, middleware, or governance: layers that can be
-upgraded, bypassed, or exploited. We call this the \emph{software-layer
-assumption}: compliance holds only if the enforcing code is correct
-and unmodified.
+An autonomous AI agent holding a private signing key can, if
+compromised, sign any message its key permits. Prompt injection,
+code modification, or adversarial retraining do not require breaking
+the signature scheme: the scheme is held perfectly, the signature is
+authentic, the action is unauthorized. Existing
+mitigations---multi-signature, contract guards, hardware enclaves---share
+one weakness: the constraint lives outside the signature's
+mathematical structure, on a software layer that a compromised agent
+can bypass.
 
-We eliminate this assumption. We introduce \emph{behavior-bound
-signatures} (BBS), in which a policy constraint $\delta(x) < \varepsilon$
-is committed at key generation and enforced inside the signature's
-zero-knowledge proof. If the action violates the policy, the ZK
-constraint system is unsatisfiable---no witness, no proof, no
-signature. No software layer can override this constraint, because the
-constraint is not implemented in software.
+We introduce \emph{behavior-bound signatures} (BBS): a signature
+scheme in which a policy predicate $\delta(x) < \varepsilon$ is
+committed at key generation and enforced inside the signature's
+zero-knowledge proof. If the action violates the committed policy,
+the ZK constraint system is unsatisfiable: no witness, no proof, no
+signature. The failure is not in code but in algebraic
+unsatisfiability, and no software modification can override it.
 
-Unlike policy-based signatures (where an authority imposes policy on
-signers), BBS is \emph{self-committed}: the signer binds their own
-future behavior at key generation, and even the signer cannot later
-violate or revoke this commitment.
-
-We formalize this as \emph{policy-soundness} (PS-CMA), a security
-model strictly stronger than EUF-CMA, and prove it under standard
-assumptions (Pedersen binding, Poseidon CR, ZK knowledge soundness).
-From this single primitive, five consequences follow: (A)~compliance
-safety under $f \le n{-}1$ Byzantine faults, decoupled from
-honest-quorum assumptions; (B)~$O(1)$ verification and audit via a
-single ZK check and homomorphic aggregation; (C)~elimination of the
-virtual-machine execution layer \emph{for policy-constrained
-transactions}; (D)~a gasless ledger in which spam is
-\emph{mathematically nonexistent} rather than economically
-discouraged; (E)~the first cryptographic guarantee that a compromised
-autonomous AI agent cannot exceed its authorized behavioral envelope.
-Branches A, B, C, E are independent consequences of PS-CMA; D is
-derived from C and from a rate-limiting extension we detail in
-\S\ref{sec:gasless}.
+We formalize this guarantee as \emph{policy-soundness} (PS-CMA), a
+security notion strictly stronger than EUF-CMA: an adversary wins
+not by forging without the key but by producing any valid signature
+on a non-compliant action, even with full access to the signing
+oracle. We prove that a natural construction from Pedersen
+commitments, Poseidon, and Groth16 satisfies PS-CMA under standard
+assumptions (Pedersen binding, Poseidon collision-resistance, ZK
+knowledge soundness). The construction is implemented in Circom;
+the core circuit compiles to 1{,}546 R1CS constraints on BN254,
+verifies in three pairings, and projects to $\sim 26$--130\,ms
+prove time on commodity hardware with native Rust provers.
 \end{abstract}
-
-\noindent\textbf{Keywords:} behavior-bound signatures, policy-soundness,
-zero-knowledge proofs, gasless ledger, execution-free blockchain,
-AI agent safety
 
 \section{Introduction}
 
-\subsection{Unrestricted Signing in an Age of Delegation}
+\paragraph{The compromised-agent problem.}
+An autonomous agent---an LLM-based assistant, a trading bot, a
+smart-contract operator---increasingly holds cryptographic keys on
+behalf of its principal. The signing key authorizes transfers,
+contract calls, or state updates. Under every standard signature
+scheme, the cryptographic guarantee is \emph{only} that the key
+holder produced the signature. Whether the signed action is
+within the principal's intent is not a cryptographic property.
 
-For fifty years, every standard signature scheme enforces a single
-property: only the key holder can produce valid signatures. What the
-key holder signs is entirely unconstrained at the cryptographic layer.
+When an adversary compromises the agent---via prompt injection, via
+the model's own failure modes, or via classical software
+exploitation---the adversary gains access to the signing capability
+\emph{without forging anything}. Every resulting signature is
+genuine under EUF-CMA; every resulting transfer, every resulting
+contract call, is authorized. The agent has been turned against its
+principal while holding the principal's key.
 
-This axiom becomes dangerous when autonomous AI agents hold private
-keys. An agent may be compromised by prompt injection, contain bugs,
-or be maliciously modified. Current mitigations---multi-signature,
-smart-contract guards, hardware enclaves---share a common
-vulnerability: the constraint lives outside the signature's
-mathematical structure. We call this the \emph{software-layer
-assumption}, and this paper shows how to remove it.
+\paragraph{Why software mitigations fail.}
+The standard response is layered defense: multi-signature requiring
+a second party, hardware enclaves gating key access, smart-contract
+guards rejecting out-of-policy calls. Each of these raises the
+attack cost. None of them is \emph{cryptographic}: each introduces
+an additional component whose correctness is assumed. A compromised
+agent can target the guard (rejecting it in its own control flow),
+the enclave's host OS, or the co-signer (phishing, collusion). The
+attack surface is the union of the agent and every mitigation
+layer, and the weakest point determines the security.
 
-\subsection{Cryptographic Self-Restriction}
+We formalize this pattern as the \emph{software-layer assumption}:
+policy compliance holds only if the enforcing code is correct and
+unmodified. Our goal is to eliminate the assumption entirely, by
+making the policy part of the signature's algebraic definition
+rather than an external check.
 
-We introduce \emph{behavior-bound signatures} (BBS), in which signing
-capability is mathematically limited by a policy committed at key
-generation:
+\paragraph{Our construction.}
+A behavior-bound signature commits at key generation to a policy
+predicate $\delta : \mathcal{X} \to \mathbb{R}_{\ge 0}$ and a
+threshold $\varepsilon$. The public key binds the signer to the
+predicate. The signing algorithm produces a zero-knowledge proof
+that includes the constraint $\delta(x) < \varepsilon$; verification
+checks the proof. If a compromised signer attempts to sign a
+non-compliant $x$, the ZK constraint system has no satisfying
+witness, and no proof---forged, modified, or otherwise---can pass
+verification. The signer cannot produce an accepting signature even
+with full control of its own code and complete knowledge of its own
+key.
 
-\paragraph{Core Invariant.} A valid BBS signature on action $x$
-exists only if $\delta(x) < \varepsilon$. If $\delta(x) \ge \varepsilon$,
-the ZK constraint system is unsatisfiable: no witness $\Rightarrow$
-no proof $\Rightarrow$ no signature.
+The guarantee is cryptographic in the strongest sense: it rests on
+the soundness of the ZK argument and the binding of standard
+commitments, not on the integrity of the signer's execution.
 
-This is not a software check. It is a mathematical impossibility.
+\paragraph{Contributions.}
+\textbf{(1) Behavior-bound signatures (BBS)}, the first signature
+primitive in which the signer's own future behavior is
+cryptographically committed at key generation, with no authority,
+no delegation hierarchy, and no software check.
+\textbf{(2) Policy-soundness (PS-CMA)}, a security notion strictly
+stronger than EUF-CMA, capturing the guarantee that a valid
+signature implies policy compliance of the signed action.
+\textbf{(3) Construction and proof}: BBS from Pedersen commitments,
+Poseidon hashing, and Groth16 arguments, proven PS-CMA under the
+standard assumptions of each primitive.
+\textbf{(4) Implementation}: a Circom + BN254 reference circuit
+(1{,}546 R1CS constraints) with a reproducible benchmark harness.
 
 \begin{table}[h]
 \centering
 \small
-\caption{From unrestricted to self-restricted signing.}
+\caption{Signature guarantees against a compromised signer.}
 \begin{tabular}{@{}lll@{}}
 \toprule
 Property & EUF-CMA & PS-CMA \\
 \midrule
-W/o key: can sign? & No & No \\
-W/ key: sign anything? & Yes & No \\
-Constraint layer & Software & Crypto \\
+Without key: can sign? & No & No \\
+With key: sign anything? & \emph{Yes} & \textbf{No} \\
+Constraint layer & Software & Cryptographic \\
 Bypass by code change? & Yes & Impossible \\
-Security basis & Key secrecy & + ZK soundness \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\subsection{One Primitive, Five Consequences}
+\section{Model and Construction}
+\label{sec:construction}
 
-From PS-CMA, five independent consequences follow---not as separate
-designs, but as necessary implications of one cryptographic root.
-Two of these converge to produce a gasless ledger architecture.
+\subsection{Policy predicate}
 
-Branches A, B, C, and E are independent consequences of PS-CMA---none
-depends on another. The gasless property (D+D$'$) is the only derived
-result: D depends on C (no execution layer $\Rightarrow$ no metering),
-while D$'$ depends directly on PS-CMA via the prev-chain structure.
-The paper presents branches in sequence for readability, but the
-logical structure is a tree, not a chain.
-
-\begin{table}[h]
-\centering
-\small
-\caption{The BBS consequence tree. All branches root in PS-CMA
-(Thm.~\ref{thm:ps-cma}). ``Depends on'' shows the true logical
-dependency, not the presentation order.}
-\label{tab:tree}
-\begin{tabular}{@{}llll@{}}
-\toprule
-Result & & Mechanism & Depends on \\
-\midrule
-A & $f \le n{-}1$ safety & Verification is local & PS-CMA \\
-B & $O(1)$ verification & Single \textsf{ZKVerify} call & PS-CMA + proof system \\
-C & No execution layer \emph{(policy-constrained txns)} & ZK-1--5 unified circuit & PS-CMA + circuit design \\
-D & No gas (metering) & No opcodes to meter & Branch C \\
-D$'$ & No gas (DoS) & ZK-R$^\dagger$ rate limit & PS-CMA + prev-chain \\
-E & AI agent safety & Cor.~\ref{cor:agent} & PS-CMA \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Contributions}
-
-\paragraph{Primary contributions.}
-\begin{enumerate}[leftmargin=*]
-\item \textbf{Behavior-bound signatures}: first cryptographic
-self-restriction of signing, in which the signer binds their own
-future behavior at key generation (\S\ref{sec:prelim}).
-\item \textbf{PS-CMA}: security model strictly stronger than EUF-CMA,
-capturing policy-bound unforgeability (\S\ref{sec:ps-cma}).
-\item \textbf{Construction and proof}: BBS from standard primitives
-(Pedersen, Poseidon, Groth16), proven PS-CMA under their standard
-assumptions (\S\ref{sec:construction}--\S\ref{sec:security}).
-\end{enumerate}
-
-\paragraph{Consequences of PS-CMA.} Independent (A, B, C, E) or
-derived (D) implications, each developed in a later section:
-\begin{itemize}[leftmargin=*]
-\item (A) $f \le n{-}1$ safety: compliance decoupled from quorum
-assumptions (\S\ref{sec:security}).
-\item (B) $O(1)$ verification and homomorphic audit
-(\S\ref{sec:gasless}).
-\item (C) Execution-free validation for policy-constrained
-transactions: the ZK circuit subsumes the VM within this class
-(\S\ref{sec:branch-c}).
-\item (D) Gasless ledger: compliance-weighted consensus with
-ZK-encoded rate limits (\S\ref{sec:gasless}).
-\item (E) AI agent safety: five attack classes blocked
-(\S\ref{sec:agent}).
-\end{itemize}
-
-\section{Preliminaries and Model}
-\label{sec:prelim}
-
-\subsection{Policy Predicate}
-
-\begin{definition}[Compliance]
-Let $\varphi_{\mathsf{sk}} : \mathcal{X} \to \mathbb{R}$ be
-signer-private, $\tau \in \mathbb{R}$ a public anchor. Define
+Let $\varphi_{\mathsf{sk}} : \mathcal{X} \to \mathbb{R}$ be a
+signer-private function committed at key generation, and
+$\tau \in \mathbb{R}$ a public anchor. Define
 $\delta(x) = |\varphi_{\mathsf{sk}}(x) - \tau|$. Action $x$ is
 \emph{compliant} iff $\delta(x) < \varepsilon$.
-\end{definition}
 
-Concrete: $\varphi_{\mathsf{sk}}(x) = \sum_j A_j \cos(t_j \ln(x+1) + \theta_j)$;
-see Appendix~\ref{app:structure}.
+A concrete family with rich expressiveness is
+$\varphi_p(x) = \sum_j A_j \cos(t_j \ln(x{+}1) + \theta_j)$ with
+parameter vector $p = \{(A_j, t_j, \theta_j)\}$; any function
+representable as a low-degree algebraic circuit over
+$\mathbb{F}_{\mathsf{BN254}}$ can serve as $\varphi$. The predicate
+is chosen by the principal at key generation; once
+$\mathsf{pk} = \mathsf{Poseidon}(p \| \tau)$ is published, $p$ and
+$\tau$ are bound.
 
-\subsection{BBS Syntax}
+\subsection{Scheme}
 
-\begin{definition}[BBS Scheme]
-$\Pi = (\mathsf{Setup}, \mathsf{KeyGen}, \mathsf{Sign}, \mathsf{Verify})$
-over $\mathcal{M}$, threshold $\varepsilon > 0$:
-\begin{itemize}
-\item $\mathsf{Setup}(1^\lambda) \to \mathsf{pp}$: group, hash, ZKP system.
-\item $\mathsf{KeyGen}(\mathsf{pp}, s) \to (\mathsf{sk}, \mathsf{pk})$:
-$\mathsf{sk} = p$; $\mathsf{pk} = \mathsf{Poseidon}(p \| \tau)$.
-\item $\mathsf{Sign}(\mathsf{sk}, \mathsf{pk}, m, \varepsilon) \to \sigma$ or $\bot$.
-\item $\mathsf{Verify}(\mathsf{pk}, m, \sigma, \varepsilon) \to \{0, 1\}$.
+\begin{definition}[BBS]
+\label{def:bbs}
+$\Pi = (\mathsf{Setup}, \mathsf{KeyGen}, \mathsf{Sign},
+\mathsf{Verify})$:
+\begin{itemize}[leftmargin=1.2em]
+\item $\mathsf{Setup}(1^\lambda) \to \mathsf{pp}$: group description,
+Poseidon parameters, ZK common reference string.
+\item $\mathsf{KeyGen}(\mathsf{pp}, s) \to (\mathsf{sk}, \mathsf{pk})$
+where $\mathsf{sk} = p$ (policy parameters) and
+$\mathsf{pk} = \mathsf{Poseidon}(p \| \tau)$ with public $\tau$.
+\item $\mathsf{Sign}(\mathsf{sk}, x, \varepsilon) \to \sigma$:
+compute $\varphi \gets \varphi_p(x)$, $\delta \gets
+|\varphi - \tau|$. If $\delta \ge \varepsilon$, return $\bot$.
+Otherwise sample $r \leftarrow \mathbb{F}$; set
+$C \gets \mathsf{Pedersen}(\varphi, \delta, r)$ and
+$\pi \gets \mathsf{ZKProve}(\mathbf{stmt}, (p, r))$ for
+statement $\mathbf{stmt} = (\mathsf{pk}, x, C, \varepsilon, \tau)$.
+Return $\sigma = (C, \pi)$.
+\item $\mathsf{Verify}(\mathsf{pk}, x, \varepsilon, \sigma) \in
+\{0,1\}$: output $\mathsf{ZKVerify}(\pi, \mathbf{stmt})$.
 \end{itemize}
 \end{definition}
 
-\begin{remark}[Sign returns $\bot$ by necessity]
+\begin{remark}
 When $\delta(x) \ge \varepsilon$, the ZK constraint system has no
-satisfying assignment. Even modified signing code cannot generate an
-accepting proof.
+satisfying assignment. Even a fully adversarial signer---one with
+modified signing code, full knowledge of $p$, and unbounded
+computational resources short of breaking the underlying
+assumptions---cannot generate an accepting proof, because the
+failure is not a rejected branch in code but the absence of a
+satisfying witness.
 \end{remark}
 
-\subsection{Policy-Soundness (PS-CMA)}
-\label{sec:ps-cma}
+\subsection{ZK statement}
 
-In the EUF-CMA experiment, the adversary wins by producing a valid
-signature without the private key. This captures external attackers
-but is blind to a fundamentally different threat: a legitimate key
-holder (or an agent that has obtained the key) signing messages that
-violate the principal's intended policy. Under EUF-CMA, such
-signatures are indistinguishable from authorized ones---the model has
-no concept of ``policy violation.''
+The prover demonstrates knowledge of a witness $(p, r)$ such that,
+setting $\varphi = \varphi_p(x)$ and $\delta = |\varphi - \tau|$:
+\begin{align*}
+\textbf{ZK-1:} &\quad \delta < \varepsilon \\
+\textbf{ZK-2:} &\quad C = \mathsf{Pedersen}(\varphi, \delta, r) \\
+\textbf{ZK-3:} &\quad \mathsf{pk} = \mathsf{Poseidon}(p \| \tau)
+\end{align*}
+All three are standard R1CS constructions: ZK-1 by range proof,
+ZK-2 by Pedersen opening in the group, ZK-3 by Poseidon evaluation
+in the prime field.
 
-PS-CMA closes this gap by introducing a second winning condition:
-\emph{compliance forgery}---producing a valid signature on a
-non-compliant action ($\delta \ge \varepsilon$).
+\section{Security}
+\label{sec:security}
+
+\subsection{Policy-soundness}
+
+The EUF-CMA experiment captures forgery by an adversary without the
+key; it is silent on the case where the key holder---or anyone with
+access to the signing capability, such as a compromised agent---signs
+an action outside the committed policy. We strengthen the notion:
 
 \begin{definition}[PS-CMA]
 \label{def:ps-cma}
-Extends EUF-CMA. $\mathcal{A}$ wins if it produces $(m^*, \sigma^*)$
-s.t.: (1) $\mathsf{Verify}(\mathsf{pk}, m^*, \sigma^*, \varepsilon) = 1$;
-(2) $m^*$ not queried to oracle; and (3) either
-$\delta(x_{m^*}) \ge \varepsilon$ (compliance forgery) or $\sigma^*$
-not from legitimate signer (identity forgery).
+Let $\Pi$ be a BBS scheme. The PS-CMA experiment runs as follows.
+The challenger executes $\mathsf{Setup}$ and $\mathsf{KeyGen}$,
+giving the adversary $\mathcal{A}$ the public key $\mathsf{pk}$
+(but not the secret parameters $p$). $\mathcal{A}$ receives oracle
+access to $\mathsf{Sign}(\mathsf{sk}, \cdot, \varepsilon)$;
+it may query the oracle on any action, receiving $\bot$ when the
+action is non-compliant. $\mathcal{A}$ outputs $(x^*, \sigma^*)$.
+It wins if:
+\begin{itemize}[leftmargin=1.2em]
+\item $\mathsf{Verify}(\mathsf{pk}, x^*, \varepsilon, \sigma^*) = 1$, \emph{and}
+\item $\delta(x^*) \ge \varepsilon$.
+\end{itemize}
+$\Pi$ is \emph{PS-CMA secure} if
+$\Pr[\mathcal{A} \text{ wins}] \le \mathsf{negl}(\lambda)$ for every
+PPT $\mathcal{A}$.
 \end{definition}
 
-The two forgery types capture distinct adversarial capabilities:
-identity forgery is the classical EUF-CMA threat (outsider without
-key), while compliance forgery is the new threat unique to PS-CMA
-(insider with key, violating committed policy).
+The game captures the compromised-agent threat model: $\mathcal{A}$
+is given \emph{everything a compromised agent sees}---the public key,
+unlimited signing-oracle access (simulating the agent's
+ability to legitimately request signatures on compliant actions
+before compromise)---and wins by producing any verifying signature
+on a non-compliant action. We do not give $\mathcal{A}$ the secret
+parameters $p$ directly; this models the threat where the
+agent has been compromised but the key material itself remains
+within whatever hardware or protocol protects it. An extension in
+which $p$ is leaked but the ZK system remains sound is equivalent
+to breaking knowledge soundness, and is therefore ruled out by the
+same assumption.
 
-\begin{proposition}[PS-CMA strictly implies EUF-CMA]
-\label{prop:ps-implies-euf}
-Let $\Pi$ be any signature scheme. If $\Pi$ is PS-CMA-secure
-(Definition~\ref{def:ps-cma}), then $\Pi$ is EUF-CMA-secure.
-Moreover, the implication is strict: there exist schemes that are
-EUF-CMA-secure but not PS-CMA-secure.
-\end{proposition}
+\subsection{Main theorem}
 
-\begin{proof}
-\emph{(Implication.)} Any EUF-CMA adversary $\mathcal{A}_{\mathrm{EUF}}$
-producing $(m^*, \sigma^*)$ with
-$\mathsf{Verify}(\mathsf{pk}, m^*, \sigma^*) = 1$ and $m^*$ unqueried
-yields a PS-CMA adversary via condition~(3) of
-Definition~\ref{def:ps-cma} (identity forgery branch): $\sigma^*$ was
-not produced by the legitimate signer, since the legitimate signer
-never received $m^*$ as a query. Hence every EUF-CMA forger is a
-PS-CMA forger, and PS-CMA security implies EUF-CMA security by
-contrapositive.
-
-\emph{(Strictness.)} Any standard EUF-CMA-secure scheme (e.g., ECDSA,
-Ed25519) is trivially not PS-CMA-secure: the signer can sign any
-message, and no policy $\delta(\cdot) < \varepsilon$ is enforced. An
-adversary who obtains $\mathsf{sk}$ (or simulates the signer's
-behavior with the signer's cooperation) can produce a valid signature
-on $m^*$ with $\delta(x_{m^*}) \ge \varepsilon$, winning the
-compliance-forgery branch of PS-CMA (Definition~\ref{def:ps-cma},
-condition~(3)).
-\end{proof}
-
-\subsection{Deterministic Action Binding}
-
-$x = \mathsf{Poseidon}(\mathsf{ac} \| \mathsf{pk} \| \mathsf{epoch})$.
-The verifier recomputes $x$; input grinding is prevented.
-
-\subsection{ZK Statement}
-
-\begin{definition}[ZK Language]
-Proof $\pi$ attests membership in:
-\[
-\mathcal{L} = \{(\mathsf{pk}, x, C, \varepsilon, \tau, \mathsf{prev}, \mathsf{epoch}) \mid \exists (p, r)\}
-\]
-\begin{align}
-\delta(x; p, \tau) &< \varepsilon && \text{(ZK-1)} \\
-C &= g^{\varphi_x} h^{\delta_x} f^r && \text{(ZK-2)} \\
-\mathsf{pk} &= \mathsf{Poseidon}(p \| \tau) && \text{(ZK-3)}
-\end{align}
-Witness: $w = (p, r)$. Field $\mathsf{prev} = H(\sigma_{i-1}.\mathsf{digest})$
-chains sequential signatures.
-\end{definition}
-
-\section{Construction}
-\label{sec:construction}
-
-\subsection{Key Generation}
-
-\begin{algorithm}[H]
-\caption{\textsc{KeyGen}}
-\begin{algorithmic}[1]
-\Require Seed $s$
-\State $p \gets$ deterministic from $\mathsf{SHA\text{-}256}(s)$ via HMAC
-\State $\tau \gets \mathrm{median}\{\varphi(x_i; p)\}_{i=1}^{10}$
-\State $\mathsf{pk} \gets \mathsf{Poseidon}(p \| \tau)$
-\State \Return $(p, \mathsf{pk})$
-\end{algorithmic}
-\end{algorithm}
-
-\subsection{Sign}
-
-\begin{algorithm}[H]
-\caption{\textsc{Sign}}
-\begin{algorithmic}[1]
-\Require $m, \mathsf{sk}, \mathsf{pk}, \varepsilon, \mathsf{prev\_digest}, \mathsf{ac}, \mathsf{epoch}$
-\State $x \gets \mathsf{Poseidon}(\mathsf{ac} \| \mathsf{pk} \| \mathsf{epoch})$
-\State $\varphi_x \gets \varphi(x; \mathsf{sk})$; $\delta_x \gets |\varphi_x - \tau|$
-\If{$\delta_x \ge \varepsilon$}
-  \State \Return $\bot$
-\EndIf
-\State $\mathsf{prev} \gets H(\mathsf{prev\_digest})$; $r \xleftarrow{\$} \mathbb{Z}_q$; $C \gets g^{\varphi_x} h^{\delta_x} f^r$
-\State $\pi \gets \mathsf{ZKProve}((\mathsf{pk}, x, C, \varepsilon, \tau, \mathsf{prev}, \mathsf{epoch}), (p, r))$
-\State \Return $(x, C, \pi, \mathsf{prev})$
-\end{algorithmic}
-\end{algorithm}
-
-\subsection{Verify}
-
-\begin{algorithm}[H]
-\caption{\textsc{Verify}}
-\begin{algorithmic}[1]
-\Require $m, \sigma = (x, C, \pi, \mathsf{prev}), \mathsf{pk}, \varepsilon, \mathsf{ac}, \mathsf{epoch}$
-\State $x' \gets \mathsf{Poseidon}(\mathsf{ac} \| \mathsf{pk} \| \mathsf{epoch})$
-\If{$x' \ne x$}
-  \State \Return $0$
-\EndIf
-\State \Return $\mathsf{ZKVerify}((\mathsf{pk}, x, C, \varepsilon, \tau, \mathsf{prev}, \mathsf{epoch}), \pi)$
-\end{algorithmic}
-\end{algorithm}
-
-\begin{remark}[Distinction from Sig$\|$NIZK]
-Na\"ive Sig$\|$NIZK lacks atomicity: the signer can produce a valid
-signature and omit the NIZK. In BBS, \textsc{Verify} alone suffices.
-\end{remark}
-
-\subsection{Instantiation}
-
-Pedersen commitments~\cite{pedersen} (perfectly hiding, computationally
-binding under DL), Poseidon~\cite{poseidon} (CR sponge),
-Bulletproofs~\cite{bulletproofs} (ROM) or PLONK~\cite{plonk} (AGM+SRS).
-Fiat--Shamir binds all public fields. The proof system satisfies
-computational zero-knowledge.
-
-\section{Security: Foundation of the Causal Chain}
-\label{sec:security}
-
-This section establishes the foundation from which all subsequent
-consequences follow.
-
-\subsection{PS-CMA Theorem}
-
-\begin{theorem}[Policy-Soundness]
+\begin{theorem}[BBS is PS-CMA secure]
 \label{thm:ps-cma}
-If Pedersen is computationally binding (DL), Poseidon is
-collision-resistant, and the ZK system satisfies knowledge soundness,
-then $\Pi$ is policy-sound (Def.~\ref{def:ps-cma}).
-\end{theorem}
-
-Each ZK assertion serves as a defense against a specific forgery type:
-
-\begin{table}[h]
-\centering
-\small
-\caption{Assertion--defense mapping.}
-\begin{tabular}{@{}lll@{}}
-\toprule
-Assertion & Blocks & Assumption \\
-\midrule
-(ZK-1) $\delta < \varepsilon$ & Compliance forgery & ZK soundness \\
-(ZK-3) $\mathsf{pk}$ binding & Identity forgery & K-soundness + CR \\
-(ZK-2) $C$ binding & Value substitution & Pedersen binding \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{proof}[Proof sketch]
-We show any PPT $\mathcal{A}$ winning PS-CMA breaks an underlying
-assumption.
-
-\emph{Compliance forgery} ($\delta(x_{m^*}) \ge \varepsilon$ yet
-$\mathsf{Verify} = 1$). Then $\pi^*$ is an accepting proof for a
-statement outside $\mathcal{L}$, since (ZK-1) is false. We construct
-a reduction $\mathcal{B}$ that runs $\mathcal{A}$, receives
-$(m^*, \sigma^*)$, and outputs $\pi^*$ as a proof for a false
-statement---contradicting soundness.
-
-\emph{Identity forgery} ($\sigma^*$ not from legitimate signer). The
-knowledge extractor applied to $\pi^*$ must yield $(p^*, r^*)$
-satisfying (ZK-3): $\mathsf{Poseidon}(p^* \| \tau) = \mathsf{pk}$. If
-extraction fails, we directly break knowledge soundness. If
-extraction succeeds but $p^* \ne p$, then $(p \| \tau) \ne (p^* \| \tau)$
-map to the same Poseidon output---a collision, contradicting CR.
-
-\emph{Value substitution.} Even if $\mathcal{A}$ cannot forge
-identity or violate $\delta < \varepsilon$ directly, it might try to
-open $C$ to alternative values $(\varphi', \delta')$ that pass the
-circuit while the true values do not. Pedersen computational binding
-(under DL) prevents this: finding two openings of $C$ reduces to
-solving discrete log.
-\end{proof}
-
-\subsection{Predicate Safety: $f \le n{-}1$}
-
-\begin{definition}[Compliance Filter]
-$\mathcal{F}(P) = \{(m_j, \sigma_j) \mid \mathsf{Verify}(\mathsf{pk}_{s(j)}, m_j, \sigma_j, \varepsilon) = 1\}$.
-\end{definition}
-
-\begin{theorem}[Predicate Safety]
-\label{thm:predicate-safety}
-$n$ nodes, up to $f \le n{-}1$ Byzantine. Under PS-CMA, $\mathcal{F}$
-contains no proposal with $\delta \ge \varepsilon_{\mathrm{policy}}$.
+Assume:
+\begin{enumerate}[leftmargin=1.2em]
+\item Pedersen is computationally binding under the discrete log
+assumption in the chosen group.
+\item Poseidon is collision-resistant.
+\item The ZK argument $(\mathsf{ZKProve}, \mathsf{ZKVerify})$ is
+knowledge-sound.
+\end{enumerate}
+Then the BBS construction of Definition~\ref{def:bbs} is PS-CMA
+secure: for every PPT adversary $\mathcal{A}$ making at most
+$q$ signing queries,
+\[
+\Pr[\mathcal{A}\text{ wins PS-CMA}] \le
+\mathsf{negl}_{\mathrm{KS}}(\lambda) +
+\mathsf{negl}_{\mathrm{bind}}(\lambda) +
+\mathsf{negl}_{\mathrm{CR}}(\lambda) \cdot q,
+\]
+where each term is negligible under the corresponding assumption.
 \end{theorem}
 
 \begin{proof}
-Forging $\delta < \varepsilon$ when $\delta \ge \varepsilon$ violates
-soundness. Verification is local; no quorum needed.
+Suppose $\mathcal{A}$ wins with non-negligible probability
+$\epsilon$. We construct reductions that contradict each of the
+three assumptions, showing $\epsilon$ is bounded by the sum of the
+corresponding advantages.
+
+\emph{Step 1: extract a witness.} Since $\sigma^* = (C^*, \pi^*)$
+is accepting, by knowledge soundness of the ZK argument there
+exists an extractor $\mathcal{E}$ that, running $\mathcal{A}$ as a
+subroutine, produces a witness $(p^*, r^*)$ such that, setting
+$\varphi^* = \varphi_{p^*}(x^*)$ and $\delta^* = |\varphi^* - \tau|$:
+\begin{itemize}[leftmargin=1.2em]
+\item $\delta^* < \varepsilon$ (ZK-1);
+\item $C^* = \mathsf{Pedersen}(\varphi^*, \delta^*, r^*)$ (ZK-2);
+\item $\mathsf{pk} = \mathsf{Poseidon}(p^* \| \tau)$ (ZK-3).
+\end{itemize}
+The probability that extraction fails given an accepting proof is
+$\mathsf{negl}_{\mathrm{KS}}(\lambda)$.
+
+\emph{Step 2: $p^*$ equals the honest key.} The key $\mathsf{pk}$
+was generated as $\mathsf{Poseidon}(p \| \tau)$ for the honest
+parameters $p$. ZK-3 gives
+$\mathsf{Poseidon}(p^* \| \tau) = \mathsf{Poseidon}(p \| \tau)$.
+Either $p^* = p$, or $(p^* \| \tau, p \| \tau)$ is a Poseidon
+collision. The latter occurs with probability at most
+$\mathsf{negl}_{\mathrm{CR}}(\lambda)$ per signing query (the
+adversary has $q$ chances to induce a useful collision via the
+oracle). Hence $p^* = p$ except with probability
+$q \cdot \mathsf{negl}_{\mathrm{CR}}(\lambda)$.
+
+\emph{Step 3: $(\varphi^*, \delta^*)$ equals the honest values.}
+Given $p^* = p$, the honest computation yields
+$\varphi = \varphi_p(x^*)$ and
+$\delta = |\varphi - \tau| = \delta(x^*)$. The signing oracle never
+produced a commitment on $x^*$ (if it had, that signature would
+already constitute a win for $\mathcal{A}$ without extraction;
+absorb such wins into the KS term). Therefore $C^*$ is a
+commitment produced by $\mathcal{A}$, and ZK-2 opens it to
+$(\varphi^*, \delta^*)$. If $(\varphi^*, \delta^*) \ne
+(\varphi, \delta)$, we have two distinct openings of $C^*$:
+$(\varphi^*, \delta^*, r^*)$ from extraction and
+$(\varphi, \delta, r')$ from any commitment consistent with the
+honest values. Computational binding of Pedersen rules out distinct
+openings except with probability
+$\mathsf{negl}_{\mathrm{bind}}(\lambda)$. Hence
+$\delta^* = \delta(x^*)$ except on this negligible event.
+
+\emph{Step 4: contradiction.} Combining Steps 1 and 3:
+$\delta(x^*) = \delta^* < \varepsilon$. But $\mathcal{A}$'s
+winning condition requires $\delta(x^*) \ge \varepsilon$.
+Contradiction.
+
+Summing the failure probabilities across the three steps yields the
+bound in the theorem statement.
 \end{proof}
 
-\subsection{Extracting the Causal Chain}
-
-\begin{remark}[Full Byzantine resilience $\Rightarrow$ Branch A]
-Even at $f = n$, Thm.~\ref{thm:predicate-safety} holds. Compliance
-depends on ZK soundness, not honest participants. This is
-qualitatively stronger than BFT ($f < n/3$). Each verifier
-independently checks the ZK proof. This branch is independent of
-Branches B--D.
-\end{remark}
-
-\begin{remark}[$O(1)$ verification $\Rightarrow$ Branch B]
-\label{rem:branch-b}
-Verification: $O(1)$ per proposal (single \textsf{ZKVerify}). Forgery:
-$O(2^\lambda)$. Under Byzantine flood, honest verifiers maintain
-constant cost. $O(1)$ follows from both the BBS construction and
-proof system properties, independent of Branch A.
-\end{remark}
-
-\begin{remark}[Safety vs.\ liveness]
-Byzantine supermajority can censor---but cannot cause acceptance of
-$\delta \ge \varepsilon$. Non-compliance is inexpressible in the
-acceptance language.
-\end{remark}
-
-\section{Application: Autonomous AI Agents}
-\label{sec:agent}
-
-BBS resolves a problem unsolvable under existing schemes: bounding a
-delegated key holder's behavior at the cryptographic layer.
-
-\subsection{Threat Model}
-
-Enterprise deploys agent $\mathcal{A}_{\mathrm{agent}}$ holding
-$\mathsf{sk}$. The agent may be: (a) compromised via prompt injection;
-(b) buggy; (c) entirely replaced. Under any traditional scheme, all
-three produce valid signatures on arbitrary messages.
-
-\subsection{Policy Encoding}
-
-\begin{table}[h]
-\centering
-\small
-\caption{Agent misbehavior blocked by BBS.}
-\begin{tabular}{@{}lll@{}}
-\toprule
-Attack & $\delta$ Encoding & Why Unblockable \\
-\midrule
-Overspend & $|\mathrm{amt} - \tau|$, $\varepsilon$ bounds & Contract bugs \\
-Bad recipient & $0$ if $\mathrm{rcpt} \in \mathcal{W}$, $\infty$ & App bypass \\
-Freq.\ abuse & $\delta$ over window & Middleware \\
-Impersonation & (ZK-3) binds $\mathsf{pk}$ & No policy \\
-Cumul.\ spend & $\delta$ over history & Trusted bookkeeper \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Cryptographic vs.\ Software Guarantee}
-
-Under BBS, the agent's code can be entirely replaced. Policy
-enforcement is in the proof system's mathematics.
-
-\begin{corollary}[Agent Behavioral Bound]
-\label{cor:agent}
-Let $\Pi$ be a BBS scheme satisfying Theorem~\ref{thm:ps-cma}.
-Assume: \emph{(i)} the private key $\mathsf{sk}$ is not disclosed
-outside the agent's signing environment; \emph{(ii)} the circuit
-$\mathcal{C}_\delta$ correctly implements the policy predicate
-$\delta(\cdot) < \varepsilon$; \emph{(iii)} the underlying ZK proof
-system is knowledge-sound; \emph{(iv)} Pedersen commitments are
-computationally binding and Poseidon is collision-resistant. Then,
-for any agent holding $\mathsf{sk}$ with policy
-$(\varepsilon, \tau)$, every signature $\sigma$ accepted by
-$\mathsf{Verify}(\mathsf{pk}, m, \sigma, \varepsilon) = 1$ satisfies
-$\delta(x_m) < \varepsilon$, regardless of the agent's code, internal
-state, or adversarial modifications to its logic above the signing
-boundary.
+\begin{corollary}[PS-CMA is strictly stronger than EUF-CMA]
+\label{cor:pscma-vs-eufcma}
+Any PS-CMA-secure BBS scheme is also EUF-CMA secure. The converse
+fails: a scheme where the signer can sign any $x$ (the EUF-CMA
+default) is EUF-CMA secure but not PS-CMA secure, as the signer's
+own signatures on non-compliant $x$ break the latter.
 \end{corollary}
 
-\begin{remark}[Scope of the guarantee]
-Corollary~\ref{cor:agent} bounds \emph{what the agent can sign}, not
-\emph{whether the agent signs}. Liveness (whether a compromised agent
-continues to produce signatures at all) and key-exfiltration attacks
-(violating assumption~(i)) are out of scope; the former is a standard
-availability concern and the latter reduces to hardware/OS isolation,
-both orthogonal to the cryptographic layer analyzed here.
-\end{remark}
-
-\section{Branch C: Execution-Free Validation for Policy-Constrained Transactions}
-\label{sec:branch-c}
-
-Section~\ref{sec:security} established Branches A and B. This section
-derives Branch C: for \emph{policy-constrained} transactions,
-encoding all validation logic into the ZK circuit eliminates the VM
-execution layer. This branch depends on PS-CMA and the circuit
-design, not on Branches A or B.
-
-\subsection{BBS-UTXO: Signatures as Transactions}
-
-A BBS \textsc{Sign} maps directly onto a UTXO transaction. The ZK
-proof $\pi$ simultaneously attests:
-\begin{align}
-\delta(x) &< \varepsilon && \text{(ZK-1)} \\
-C &= g^{\varphi_x} h^{\delta_x} f^r && \text{(ZK-2)} \\
-\mathsf{pk} &= \mathsf{Poseidon}(p \| \tau) && \text{(ZK-3)} \\
-\textstyle\sum \mathrm{in} &\ge \textstyle\sum \mathrm{out} && \text{(ZK-4}^\dagger\text{)} \\
-\mathsf{state}_{\mathrm{new}} &= f(\mathsf{state}_{\mathrm{old}}, \mathrm{in}) && \text{(ZK-5}^\dagger\text{)}
-\end{align}
-
-(ZK-1)--(ZK-3) are proven secure (Thm.~\ref{thm:ps-cma}). (ZK-4)--(ZK-5),
-marked $\dagger$, are extensions; composability is addressed in
-\S\ref{sec:composability}. All five are verified in one $O(1)$ check.
-Knowledge soundness of the proof system is circuit-generic: the
-extractor operates over the extended witness space
-$(p, r, \mathrm{inputs}, \mathrm{outputs}, \mathsf{state})$ without
-additional assumptions.
-
-\subsection{Why This Eliminates the Execution Layer}
-
-Traditional blockchains re-execute every contract on every node,
-creating three problems: (a) execution bugs as attack vectors;
-(b) gas metering; (c) throughput bounded by execution speed.
-
-In BBS-UTXO, the signer executes off-chain and provides a ZK proof.
-On-chain: proof verification only. Attack surface shrinks from ``code
-is bug-free'' to ``ZK soundness holds.''
-
-\subsection{Scope: Policy-Constrained Contracts, Not Turing-Complete}
-\label{sec:scope}
-
-We make an explicit distinction. BBS contracts are \emph{policy-constrained}:
-each transaction must satisfy a $\delta$-predicate committed at key
-generation. This covers a well-defined and practically important
-class of transaction logic:
-\begin{itemize}
-\item Transfer with spending limits: $\delta = |\mathrm{amt} - \tau|$ (ZK-1).
-\item Recipient whitelisting: $\delta = 0$ if $\mathrm{rcpt} \in \mathcal{W}$, $\infty$ otherwise.
-\item Rate limiting: transaction count within time window $< N$ (ZK-R$^\dagger$, \S\ref{sec:zk-r}).
-\item Cumulative spending caps: $\delta$ computed over sliding history via prev-chain.
-\item Value conservation: $\sum \mathrm{in} \ge \sum \mathrm{out}$ (ZK-4$^\dagger$).
-\end{itemize}
-
-This class covers the majority of financial transaction
-patterns---and precisely the patterns where smart-contract
-vulnerabilities (reentrancy, overflow, access-control bypass) have
-caused the greatest losses.
-
-\paragraph{What BBS does not cover.} BBS does not replace
-Turing-complete smart contracts. Arbitrary logic such as AMM curves,
-on-chain governance voting, or complex DeFi composability requires
-either: (a) a circuit registry mechanism allowing developers to
-register new ZK circuits with the ledger (deferred to the BBS-DAG
-specification), or (b) an application layer built on top of BBS that
-handles complex logic off-chain with BBS providing the settlement
-and compliance guarantee.
-
-\begin{remark}[Expressiveness vs.\ safety tradeoff]
-BBS deliberately sacrifices Turing completeness for cryptographic
-safety. In a Turing-complete VM, any expressible program can be
-deployed---including buggy ones. In BBS, only programs encodable as
-$\delta$-predicates can be deployed, and compliance is enforced by
-ZK soundness rather than code correctness. This is a design choice,
-not a limitation: for the target domain (autonomous agent
-transactions with behavioral bounds), policy-constrained contracts
-are both sufficient and strictly safer.
-\end{remark}
-
-\subsection{Composability of ZK-4/ZK-5 with PS-CMA}
-\label{sec:composability}
-
-The extended language
-$\mathcal{L}' = \mathcal{L} \cap \mathcal{L}_{\mathrm{cons}} \cap \mathcal{L}_{\mathrm{state}}$
-adds constraints but does not weaken them:
-
-(a) \emph{Compliance forgery:} ZK-1 unchanged in $\mathcal{L}'$;
-additional constraints only shrink the language.
-(b) \emph{Identity forgery:} ZK-3 unchanged; extractor argument
-identical.
-(c) \emph{Conservation/state:} knowledge soundness over $\mathcal{L}'$
-guarantees all five constraints.
-
-\begin{theorem}[Extended PS-CMA]
-\label{thm:ext-ps-cma}
-If the ZK system is knowledge-sound over $\mathcal{L}'$, Pedersen
-binding and Poseidon CR hold, then $\Pi'$ is policy-sound and no
-accepting proof violates ZK-4 or ZK-5.
-\end{theorem}
-
-\begin{proof}[Proof sketch]
-$\mathcal{L}' \subseteq \mathcal{L}$ w.r.t.\ (ZK-1)--(ZK-3).
-Soundness over $\mathcal{L}'$ guarantees all five constraints.
-Reduction identical to Thm.~\ref{thm:ps-cma}, with the proof system's
-circuit-generic knowledge soundness applied to the extended witness.
+\begin{proof}
+$(\Rightarrow)$ An EUF-CMA adversary $\mathcal{B}$ that forges
+$(\mathsf{pk}, x^*, \sigma^*)$ on a fresh $x^*$ without the key
+yields a PS-CMA adversary: without $p$, by knowledge soundness
+$\mathcal{B}$ either succeeds on $\delta(x^*) < \varepsilon$ with
+negligible probability (soundness itself), or must have solved the
+extraction-binding chain, contradicting Theorem~\ref{thm:ps-cma}
+under its assumptions.
+$(\Leftarrow)$ EUF-CMA permits the key holder to sign any message.
+Construct $\mathcal{A}$: query the signing oracle on any
+non-compliant $x^*$; the oracle returns $\bot$, but a standard
+signature scheme (e.g., ECDSA on a digest of $x^*$) would not;
+direct construction yields an EUF-CMA-secure scheme that trivially
+loses PS-CMA.
 \end{proof}
 
-\begin{table}[h]
-\centering
-\small
-\caption{Execution-layer comparison (policy-constrained transactions).}
-\begin{tabular}{@{}lll@{}}
-\toprule
-Dim. & Traditional & BBS \\
-\midrule
-Execution & VM per-opcode & None; 1 ZK verify \\
-Security & Code bug-free & ZK soundness \\
-Verify cost & $O(\text{complexity})$ & $O(1)$ \\
-Node burden & Re-execute all & Verify proof \\
-Audit & $O(n)$ replay & $O(1)$ aggregated \\
-Attack surface & reentrancy, \ldots & Proof system \\
-Expressiveness & Turing-complete & Policy-constrained \\
-\bottomrule
-\end{tabular}
-\end{table}
+\section{Implementation and Evaluation}
+\label{sec:impl}
 
-\section{Branch D: Gasless Ledger}
-\label{sec:gasless}
+We instantiate BBS with the BN254 elliptic curve for all pairings
+and commitments, Poseidon over the BN254 scalar field, and Groth16
+for the ZK argument. A reference Circom implementation of
+ZK-1, ZK-2, ZK-3 compiles to
+\textbf{1{,}546 R1CS constraints} and produces proofs of
+\textbf{192 bytes} (standard Groth16: $2\mathbb{G}_1 + 1\mathbb{G}_2$).
+Verification performs three BN254 pairings, independent of circuit
+size.
 
-This section derives Branch D, the only derived branch: it depends on
-Branch C (no execution layer $\Rightarrow$ no metering) and on PS-CMA
-via the prev-chain structure (ZK-R$^\dagger$ $\Rightarrow$ no
-fee-based spam prevention).
+\paragraph{Prover performance.}
+On Google Colab free tier (2 vCPU), a pure-JavaScript reference
+prover (snarkjs) reports prove-median
+$677$\,ms and verify-median $35$\,ms over 100 iterations. At the
+commodity-hardware baseline of $\sim 1~\mu$s/constraint achievable
+with native Rust provers (arkworks~\cite{arkworks},
+rapidsnark~\cite{rapidsnark}), the 1{,}546-constraint core circuit
+projects to $\sim 1.5$\,ms prove time; a 26K-constraint extended
+circuit (policy predicate + anti-replay + additional side
+conditions) projects to $\sim 26$--130\,ms.
 
-\subsection{Why Gas Exists and Why BBS Removes It}
-
-Gas serves two functions: (a) execution metering---bounding
-computation; (b) DoS protection---imposing cost on spam.
-
-BBS eliminates (a) entirely: no VM, no opcodes, every transaction
-costs one $O(1)$ verify. Function (b) is addressed by
-compliance-weighted admission (\S\ref{sec:zk-r}).
-
-\subsection{Compliance-Weighted Consensus}
-
-The \textsf{prev} chain gives each signer verifiable history. With
-Pedersen homomorphic aggregation:
-\begin{equation}
-W(\mathsf{pk}) = \frac{n(\mathsf{pk})}{\bar{\delta}(\mathsf{pk}) + \alpha}
-\end{equation}
-This replaces PoW/PoS as Sybil resistance:
-\begin{itemize}
-\item No energy waste: weight from compliance, not hash-rate.
-\item No capital lockup: no staking required.
-\item Sybil resistance: high weight requires sustained compliance.
-\item Unforgeable: each $\delta_i$ is committed via Pedersen
-(computationally binding under DL); $\bar{\delta}$ is computed via
-homomorphic aggregation $\prod C_i$; by Thm.~\ref{thm:predicate-safety},
-no valid signature exists with $\delta \ge \varepsilon$. Hence
-$W(\mathsf{pk})$ cannot be inflated without breaking Pedersen binding
-or ZK soundness.
-\end{itemize}
-
-\subsection{DoS Protection Without Gas}
-\label{sec:zk-r}
-
-\subsubsection{Cryptographic Rate Limiting (ZK-R$^\dagger$)}
-
-Since $\delta$ can encode arbitrary behavioral constraints, rate
-limits are simply another policy predicate. The ZK statement is
-extended with:
-\begin{equation}
-|\{j : \mathsf{epoch}_j > \mathsf{epoch}_{\mathrm{now}} - T, \text{prev-chain contains } \sigma_j\}| < N
-\tag{ZK-R$^\dagger$}
-\end{equation}
-where $T$ is the time window and $N$ is the maximum transaction count
-committed at key generation. A transaction exceeding the rate limit
-cannot produce a valid proof: the constraint system is unsatisfiable,
-so no signature exists.
-
-The spam transaction is not ``rejected by the network''---it is
-mathematically nonexistent.
-
-\subsubsection{Concrete Circuit Construction for ZK-R$^\dagger$}
-
-The feasibility of ZK-R$^\dagger$ depends on efficiently proving a
-count over historical transactions inside the ZK circuit. We show
-this reduces to a fixed-depth hash-chain walk using BBS's existing
-prev-chain structure.
-
-\paragraph{Key observation.} Each BBS signature already contains
-$\mathsf{prev} = H(\sigma_{i-1}.\mathsf{digest})$ and $\mathsf{epoch}$.
-The signer's transaction history is a hash chain of known
-depth. The rate-limit parameter $N$ is committed at key generation
-and is a public constant of the circuit.
-
-\paragraph{Circuit.} The prover supplies as private witness the $N$
-most recent prev-chain entries $\{(\mathsf{prev}_k, \mathsf{epoch}_k)\}_{k=1}^N$.
-The circuit verifies:
-\begin{enumerate}
-\item \emph{Chain integrity} ($N$ hash checks): for each $k \in [1, N{-}1]$,
-\begin{equation}
-\mathsf{prev}_k = \mathsf{Poseidon}(\mathsf{prev}_{k+1} \| \mathsf{epoch}_{k+1} \| \cdots)
-\tag{RC-1}
-\end{equation}
-verifying the prev-chain links backward from the current transaction.
-This costs $N$ Poseidon evaluations.
-
-\item \emph{Epoch bound} (1 comparison): the oldest entry in the
-window satisfies
-\begin{equation}
-\mathsf{epoch}_N > \mathsf{epoch}_{\mathrm{now}} - T
-\tag{RC-2}
-\end{equation}
-If the $N$-th ancestor is still within the window, then $N$
-transactions have occurred in window $T$, and the current ($N{+}1$-th)
-transaction is blocked.
-
-\item \emph{Window exit} (alternative satisfying assignment): if
-$\mathsf{epoch}_N \le \mathsf{epoch}_{\mathrm{now}} - T$, fewer than
-$N$ transactions fall within the window, and the constraint is
-satisfied.
-\end{enumerate}
-
-\paragraph{Circuit cost.} The dominant cost is $N$ Poseidon
-evaluations. Each Poseidon hash costs $\sim 250$ R1CS
-constraints~\cite{poseidon}. For $N = 100$ (maximum 100 transactions
-per time window):
-\begin{equation}
-\text{ZK-R}^\dagger \text{ cost} \approx N \times 250 = 25{,}000 \text{ R1CS constraints}
-\end{equation}
-Combined with the base BBS circuit ($\sim 315$ constraints) and
-ledger extensions (ZK-4, ZK-5, estimated $\sim 1{,}000$ constraints),
-the total circuit is $\sim 26{,}000$ constraints---well within the
-range of modern ZK systems. For comparison, Zcash Sapling uses
-$\sim 100{,}000$ constraints; zkSync circuits exceed $10^6$.
-
-\paragraph{Proof generation time.} At current benchmarks ($\sim 1~\mu$s
-per constraint for Groth16, $\sim 5~\mu$s for PLONK), a 26K-constraint
-circuit generates a proof in $\sim 26$--130~ms on commodity hardware,
-consistent with the 20--50~ms estimate for the base circuit (the
-rate-limit extension adds a factor of $\sim 2$--3$\times$).
-
-\begin{remark}[Fixed circuit depth]
-$N$ is a compile-time constant committed at key generation. The
-circuit does not dynamically iterate over variable-length history.
-This is critical: ZK circuits require fixed structure. The prover
-always supplies exactly $N$ prev-chain entries; if the signer has
-fewer than $N$ historical transactions, the remaining slots are
-filled with a sentinel value and the epoch check (RC-2) trivially
-passes.
-\end{remark}
-
-\subsubsection{Comparison with Prior Gasless Designs}
-
-\begin{table}[h]
-\centering
-\small
-\caption{Prior gasless models vs.\ BBS.}
-\begin{tabular}{@{}lll@{}}
-\toprule
-Model & Spam Defense & Failure Mode \\
-\midrule
-Staking (EOS) & Capital lockup & Whales monopolize \\
-Relayer (ERC-4337) & Third-party pays & Fee shifted, not eliminated \\
-MicroPoW (Nano) & Per-TX hash puzzle & GPU pre-computation \\
-Permissioned & Whitelist & No longer permissionless \\
-BBS & ZK proof & No known bypass \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The critical distinction: in all prior models, spam transactions
-reach the network and consume node resources before being filtered.
-In BBS, spam transactions cannot be constructed---nodes never see
-them. This follows directly from PS-CMA soundness
-(Thm.~\ref{thm:ps-cma}).
-
-\subsubsection{Three-Layer Spam Defense}
-
-Combined with compliance-weighted consensus and weight decay:
-\begin{description}
-\item[Layer 1:] Cryptographic rate limit (ZK-R$^\dagger$, per-identity hard cap).
-\item[Layer 2:] Weight-based ordering (new identities deprioritized).
-\item[Layer 3:] Weight decay (compromised identities auto-demote).
-\end{description}
-No transaction fees at any layer.
-
-\begin{remark}
-We claim BBS removes execution-metering gas and fee-based spam
-prevention. DoS protection is handled by cryptographic rate limits
-and compliance-weighted admission without per-transaction user fees.
-\end{remark}
-
-\subsection{Two-Layer Architecture}
-
-\paragraph{Fast layer (off-chain).} Bilateral state updates via
-ECDSA/EdDSA, sub-ms latency. No ZK proof per micro-transaction.
-
-\paragraph{Anchor layer (on-chain).} Periodic batch commit (e.g.,
-every 100 txns / 10s) with single ZK proof. Amortized: $\sim 0.2$--0.5
-ms/txn.
-
-\subsection{$O(1)$ Compliance Audit}
-
-Pedersen is additively homomorphic:
-$\prod_i C_i = g^{\sum \varphi_i} h^{\sum \delta_i} f^{\sum r_i}$.
-One aggregated check verifies entire history---$O(n) \to O(1)$.
-
-\subsection{Economic Model}
-
-Gasless $\ne$ costless. Verifier incentives:
-\begin{enumerate}[label=(\alph*)]
-\item Block rewards from controlled inflation.
-\item Optional application-layer fees (not protocol gas).
-\item High $W(\mathsf{pk})$ grants block production priority.
-\end{enumerate}
-Full tokenomics: BBS-DAG paper (in preparation).
-
-\subsection{Implications}
-
-The BBS primitive is not merely a signature scheme that could
-optionally be deployed on a ledger. Its structural properties---per-signature
-compliance proof, prev-chain history, homomorphic commitment
-aggregation, $f \le n{-}1$ safety, and cryptographic spam prevention
-without transaction fees---constitute the native building blocks of a
-ledger whose consensus, state model, audit mechanism, and fee model
-are all grounded in the same cryptographic foundation. A full
-specification of such a ledger (BBS-DAG) is in preparation.
+\paragraph{Artifact.}
+The reference circuit, input generator, validation tests, and
+benchmark harness are provided as a single-file Colab runner
+(\texttt{bbs\_circom\_colab.py}, 969 lines) that installs
+dependencies, compiles the circuit, runs a Powers-of-Tau ceremony,
+generates a Groth16 key, and produces reproducible benchmark output
+in under three minutes on free-tier hardware. The artifact
+establishes algorithmic consistency of the construction. It does
+not provide the rapidsnark benchmark matching the native baseline;
+this is in progress.
 
 \section{Related Work}
 
-\paragraph{Policy-Based Signatures~\cite{policy-sigs}:} authority-defined
-policies. BBS is self-committed.
+\paragraph{Policy-based signatures~\cite{policy-sigs}.}
+A certification authority issues signing keys tied to a policy; the
+signer can sign only policy-compliant messages. The trust root is
+the authority: a compromised authority can issue arbitrary keys.
+BBS is self-committed: no authority, no revocation hierarchy, and
+the policy is bound at $\mathsf{KeyGen}$ by the signer to the
+signer's own future behavior.
 
-\paragraph{Functional Signatures~\cite{func-sigs}:} function-output
-restriction. BBS binds deviation with self-commitment.
+\paragraph{Functional signatures~\cite{func-sigs}.}
+A master key holder issues derived signing keys, each tied to a
+function; the derived key can sign only outputs of the function.
+BBS has no derivation tree: the root key is itself policy-bound.
+The threat model differs: functional signatures address delegation
+(principal constrains delegate); BBS addresses self-compromise
+(principal constrains themselves, because an AI agent \emph{is}
+the principal's delegated computation).
 
-\paragraph{Sanitizable/Redactable:} post-signing editability, not
-pre-signing constraint.
+\paragraph{Anonymous credentials~\cite{anon-creds}.}
+Users prove possession of attributes issued by an authority,
+without revealing identity. The proof is about the \emph{holder's
+attributes}; BBS's proof is about the \emph{signed action's
+compliance}. The two are composable.
 
-\paragraph{ZK in Blockchains (Zcash, zkRollups):} prove format
-correctness; BBS proves behavioral compliance. zkRollups retain
-sequencer execution; BBS eliminates it.
+\paragraph{AI agent safety via capabilities.}
+Recent work on LLM agent security (sandboxing, capability tokens,
+action approval workflows) operates at the software layer. Our
+contribution is orthogonal: BBS provides a cryptographic
+substrate on which such systems can rest, replacing the
+software-layer assumption at the signing boundary with a
+mathematical one. We do not claim BBS subsumes
+capability-based safety; BBS handles the outermost signing step,
+beyond which all software-layer defenses remain valuable.
 
-\paragraph{Multi-sig/Threshold:} distribute authority, don't constrain
-what is signed.
+\paragraph{ZK in blockchains.}
+zkRollups and similar systems prove execution correctness of
+transactions inside a trusted execution model. BBS proves that the
+signer of a transaction was, at the moment of signing, compliant
+with a committed policy. The two proofs are orthogonal and
+compose: a zkRollup inclusion proof over BBS-signed inputs yields a
+system in which every included transaction is both executable and
+policy-compliant by construction.
 
-\paragraph{Gasless proposals (IOTA, Nano, EOS):} alternative consensus
-but retain execution. BBS derives gaslessness from eliminating
-execution via cryptographic compliance.
+\section{Discussion and Future Work}
 
-\section{Discussion}
+\paragraph{Beyond agent safety.}
+BBS's core guarantee---that the set of signable actions is
+cryptographically bounded---composes into architectural properties
+beyond the compromised-agent threat model. A distributed ledger
+accepting BBS signatures inherits compliance safety from per-signature
+verification alone, decoupled from honest-quorum assumptions.
+Pedersen's additive homomorphism enables $O(1)$ aggregate audit.
+For transaction classes whose semantics are fully captured by
+$\varphi$, the ZK circuit subsumes general-purpose execution. A
+rate-limit extension expressible as a prev-chain traversal in
+the circuit eliminates fee-based spam defense. Each of these is a
+separate technical development, and we defer formal treatment to
+follow-up work; the present paper establishes the primitive and
+its security.
 
-\paragraph{Consensus integration.} BBS is a safety amplifier; does
-not alter liveness bounds.
+\paragraph{Efficiency of native prover.}
+Matching the $\sim 1~\mu$s/constraint baseline requires a
+rapidsnark or arkworks implementation of the circuit. Engineering
+cost is low (the circuit is standard Groth16); the benchmark is in
+progress.
 
-\paragraph{Circuit approximation.} Error $B$ requires
-$\varepsilon_{\mathrm{circuit}} = \varepsilon_{\mathrm{policy}} - B$;
-at $(N_{\ln} = 10, N_{\cos} = 8)$: $B \approx 0.46$.
+\paragraph{Policy expressiveness.}
+$\varphi$ is any function representable as a low-degree algebraic
+circuit. Non-algebraic policies (floating-point arithmetic,
+external data feeds) require either a circuit-level approximation
+or a hash-bound commitment to an external value; the latter
+reintroduces a trust boundary and is outside the scope of BBS's
+core guarantee.
 
-\paragraph{Scalability.} Richer policies increase circuit size but
-maintain PS-CMA.
-
-\paragraph{Scope.} On-chain compliance only; off-chain behavior is
-out of scope.
-
-\paragraph{Open problem.} Hardness of recovering $p$ from oracle
-access to $\varphi$.
-
-\subsection{Expressiveness: Why Policy-Constrained Is a Feature}
-
-BBS deliberately restricts expressiveness to policy-constrained
-transactions (\S\ref{sec:scope}). Three architectural layers
-contribute to this restriction:
-
-\paragraph{Layer 1: $\delta$-predicate structure.} All logic must be
-expressed as a deviation measure $\delta(x) < \varepsilon$. Relaxing
-this to arbitrary boolean predicates $P(x) \to \{0, 1\}$ is
-technically possible but would destroy the semantic basis for $O(1)$
-audit (Pedersen homomorphic aggregation over $\bar{\delta}$) and
-compliance-weighted consensus ($W(\mathsf{pk})$ requires a continuous
-$\delta$).
-
-\paragraph{Layer 2: Circuit fixed at KeyGen.} Each identity commits
-to a fixed circuit via $\mathsf{pk} = \mathsf{Poseidon}(p \| \tau)$.
-A circuit registry would allow runtime deployment of new circuits,
-but would reintroduce the ``circuit may have bugs'' trust
-assumption---weakening ``No Software Can Override'' to ``No Software
-Can Override, Assuming the Circuit Is Correct.''
-
-\paragraph{Layer 3: No cross-proof invocation.} Each BBS signature is
-a self-contained proof. Recursive SNARKs could enable proof-of-proof
-composition, but at 10--100$\times$ overhead per recursion layer, and
-would require shared state and sequencing---partially negating BBS's
-architecture.
-
-None of these limitations originate in the ZK proof system itself
-(which can prove arbitrary NP statements). They are architectural
-choices that enable the security guarantees of Branches A--E.
-Relaxing any layer trades a core advantage for expressiveness:
-
-\begin{table}[h]
-\centering
-\small
-\caption{Expressiveness--safety tradeoff by layer.}
-\begin{tabular}{@{}lll@{}}
-\toprule
-Layer & If Relaxed & Lost Property \\
-\midrule
-1: $\delta$-predicate & Arbitrary predicates & $O(1)$ audit, $W(\mathsf{pk})$ semantics \\
-2: Fixed circuit & Circuit registry & Unconditional safety \\
-3: No cross-proof & Recursive SNARKs & Stateless UTXO, no sequencer \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Toward BBS-DAG: Composability via Cross-Signature References}
-
-Rather than relaxing the three layers above, we identify a fourth
-path that extends composability without sacrificing core properties:
-allowing a BBS signature to reference the public digests of other
-signers' signatures, forming a DAG (directed acyclic graph) of
-cross-identity references.
-
-\paragraph{Mechanism.} Currently, each signature's \textsf{prev}
-field references only the signer's own predecessor (a per-identity
-chain). We generalize: a signature may include a set
-$\mathsf{refs} = \{(\mathsf{digest}_k, \mathsf{pk}_k, \mathsf{epoch}_k)\}$
-of references to other identities' latest signatures. The ZK circuit
-verifies:
-\begin{equation}
-\forall~\mathsf{ref} \in \mathsf{refs} : H(\mathsf{ref}.C \| \mathsf{ref}.\mathsf{pk} \| \mathsf{ref}.\mathsf{epoch}) = \mathsf{ref}.\mathsf{digest}
-\tag{DAG-1}
-\end{equation}
-and applies a predicate $P_{\mathrm{ref}}$ over the referenced state:
-\begin{equation}
-P_{\mathrm{ref}}(\mathsf{ref}.C, \mathsf{ref}.\mathsf{pk}, \mathsf{ref}.\mathsf{epoch}) = 1
-\tag{DAG-2}
-\end{equation}
-Each reference costs $\sim 250$ R1CS constraints (one Poseidon
-hash). Referencing 5 predecessors adds $\sim 1{,}250$ constraints to
-a $\sim 26$K base circuit---a negligible 5\% overhead.
-
-\paragraph{What this enables.}
-\begin{itemize}
-\item \emph{Conditional transfer:} Alice's signature references
-Bob's latest commitment $C_{\mathrm{Bob}}$; her circuit verifies a
-condition on Bob's public state before authorizing transfer.
-\item \emph{Multi-party confirmation:} A signature references two
-identities' signatures; the circuit verifies both exist and are
-compliant. Multi-sig semantics without a multi-sig contract.
-\item \emph{Channel settlement:} Anchor signature references both
-parties' latest state signatures; circuit verifies bilateral
-consistency.
-\item \emph{Limited DeFi:} A ``pool'' BBS identity maintains state
-via its own prev-chain. Users reference the pool's latest signature.
-The pool's next signature references user requests. Composition
-through DAG interleaving, not runtime calls.
-\end{itemize}
-
-\paragraph{What this preserves.} References are read-only: Alice can
-observe Bob's public state but cannot modify it within her proof.
-This means:
-\begin{itemize}
-\item $\delta$-predicate structure is unchanged (Layer 1 preserved).
-\item Each identity's circuit is still fixed at KeyGen (Layer 2 preserved).
-\item No recursive SNARKs needed (Layer 3 concern avoided).
-\item $O(1)$ audit via Pedersen aggregation is unaffected.
-\item ``No Software Can Override'' remains unconditional.
-\item No shared mutable state $\Rightarrow$ no sequencer needed.
-\end{itemize}
-
-\paragraph{Security.} $\mathcal{L}_{\mathrm{DAG}} = \mathcal{L}' \cap \mathcal{L}_{\mathrm{refs}}$
-adds constraints (DAG-1, DAG-2) to the existing language. By the same
-argument as Theorem~\ref{thm:ext-ps-cma}: $\mathcal{L}_{\mathrm{DAG}} \subseteq \mathcal{L}'$,
-so PS-CMA security is preserved.
-
-\paragraph{Limitation.} DAG references cannot provide atomic
-multi-party state mutation. A Uniswap-style swap (simultaneous
-modification of user balance and pool reserves) requires a two-phase
-pattern: user signs a ``request'' referencing pool state; pool
-identity signs an ``execution'' referencing the request. This is not
-atomic, but DAG ordering guarantees eventual consistency.
-
-A fuller treatment of how BBS-DAG can serve as L0 beneath a zkEVM
-execution layer---including based-rollup sequencing, hash-bound
-verification, and deposit/withdrawal settlement---is deferred to
-Appendix~\ref{app:based-rollup} as a preliminary design sketch. The
-constructions in that appendix are not claimed as theorems of this
-paper; they illustrate how PS-CMA composes with general execution
-and motivate the BBS-DAG specification in preparation.
-
-\subsection*{Future Work}
-Machine-checked proofs (Tamarin/ProVerif); post-quantum primitives;
-full BBS-DAG protocol specification including DAG ordering~\cite{dagknight},
-deposit/withdrawal settlement (Appendix~\ref{app:based-rollup}), and
-cross-chain compliance transfer.
+\paragraph{Leakage of $p$.}
+Theorem~\ref{thm:ps-cma} assumes $p$ remains secret. A compromise
+that leaks $p$ enables the adversary to produce signatures on
+actions compliant with $\delta_{p}$, which may not match the
+principal's intent if $p$ itself was chosen adversarially. The
+standard countermeasure---key rotation, threshold key
+generation---applies without modification.
 
 \section{Conclusion}
 
-We presented behavior-bound signatures---the first scheme where
-signing capability is cryptographically restricted by a self-committed
-policy. PS-CMA soundness is the single root from which five
-independent consequences grow:
-\begin{description}
-\item[A.] \emph{$f \le n{-}1$ compliance safety:} depends on soundness,
-not honest nodes (Thm.~\ref{thm:predicate-safety}).
-\item[B.] \emph{$O(1)$ local verification:} single \textsf{ZKVerify},
-constant cost (Rem.~\ref{rem:branch-b}).
-\item[C.] \emph{Execution-free validation for policy-constrained
-transactions:} ZK circuit subsumes VM within this class
-(Thm.~\ref{thm:ext-ps-cma}).
-\item[D.] \emph{Gasless ledger:} branch C eliminates metering;
-ZK-R$^\dagger$ eliminates fee-based spam prevention (\S\ref{sec:gasless}).
-\item[E.] \emph{AI agent safety:} first cryptographic guarantee
-against compromised agent misbehavior (Cor.~\ref{cor:agent}).
-\end{description}
+An autonomous agent holding a BBS signing key cannot, regardless
+of compromise, produce a valid signature on an action that violates
+the committed policy. This is the first cryptographic bound on
+autonomous agent behavior: not a software layer to be verified, not
+a capability token to be checked, but the algebraic impossibility
+of producing a witness. The construction is simple and
+instantiable with today's tools. Its security rests on the same
+assumptions as the standard ZK-SNARK stack.
 
-One cryptographic primitive; a tree of paradigm-level consequences.
-The framework relocates compliance from the social to the
-cryptographic layer. As autonomous agents increasingly act for
-humans, this relocation is not merely theoretical---it is a practical
-necessity. No software layer can override this constraint, because
-the constraint is not implemented in software.
+The software-layer assumption---compliance holds only if enforcing
+code is correct and unmodified---has been the implicit foundation
+of every prior approach to agent safety. We replace it with
+cryptographic impossibility.
 
 \begin{thebibliography}{9}
-
 \bibitem{pedersen}
-T.~P. Pedersen.
-\newblock Non-interactive and information-theoretic secure verifiable
-secret sharing.
-\newblock \emph{CRYPTO}, 1991.
-
-\bibitem{bulletproofs}
-B.~B\"unz et al.
-\newblock Bulletproofs: Short proofs for confidential transactions
-and more.
-\newblock \emph{IEEE S\&P}, 2018.
+T.P. Pedersen. Non-interactive and information-theoretic secure
+verifiable secret sharing. \emph{CRYPTO}, 1991.
 
 \bibitem{poseidon}
-L.~Grassi et al.
-\newblock Poseidon: A new hash function for ZK proof systems.
-\newblock \emph{USENIX Security}, 2021.
+L.~Grassi, D.~Khovratovich, R.~L\"uftenegger, C.~Rechberger,
+M.~Schofnegger, R.~Walch. Poseidon: A new hash function for
+zero-knowledge proof systems. \emph{USENIX Security}, 2021.
+
+\bibitem{groth16}
+J.~Groth. On the size of pairing-based non-interactive arguments.
+\emph{EUROCRYPT}, 2016.
 
 \bibitem{plonk}
-A.~Gabizon et al.
-\newblock PLONK.
-\newblock \emph{IACR ePrint 2019/953}.
-
-\bibitem{anon-creds}
-J.~Camenisch, A.~Lysyanskaya.
-\newblock Efficient anonymous credentials.
-\newblock \emph{EUROCRYPT}, 2001.
+A.~Gabizon, Z.J. Williamson, O.~Ciobotaru. PLONK: Permutations over
+Lagrange-bases for oecumenical noninteractive arguments of
+knowledge. \emph{IACR ePrint 2019/953}.
 
 \bibitem{policy-sigs}
-M.~Bellare, G.~Fuchsbauer.
-\newblock Policy-based signatures.
-\newblock \emph{PKC}, 2014.
+M.~Bellare, G.~Fuchsbauer. Policy-based signatures. \emph{PKC}, 2014.
 
 \bibitem{func-sigs}
-E.~Boyle et al.
-\newblock Functional signatures and pseudorandom functions.
-\newblock \emph{PKC}, 2014.
+E.~Boyle, S.~Goldwasser, I.~Ivan. Functional signatures and
+pseudorandom functions from standard assumptions. \emph{PKC}, 2014.
 
-\bibitem{dagknight}
-Y.~Sompolinsky, M.~Sutton.
-\newblock The DAG KNIGHT Protocol: A parameterless generalization of
-Nakamoto consensus.
-\newblock \emph{IACR ePrint 2022/1494}, 2022.
+\bibitem{anon-creds}
+J.~Camenisch, A.~Lysyanskaya. An efficient system for non-transferable
+anonymous credentials with optional anonymity revocation.
+\emph{EUROCRYPT}, 2001.
 
+\bibitem{arkworks}
+arkworks Contributors. \emph{arkworks}: A Rust ecosystem for
+zkSNARK programming. \url{https://github.com/arkworks-rs}.
+
+\bibitem{rapidsnark}
+iden3. \emph{rapidsnark}: Native Groth16 prover in C++.
+\url{https://github.com/iden3/rapidsnark}.
 \end{thebibliography}
-
-\appendix
-
-\section{Structure Function}
-\label{app:structure}
-
-$\varphi(x; p) = \sum_{j=0}^{2} A_j \cos(t_j \ln(x+1) + \theta_j)$,
-$x \ge 0$. Parameters: $A_j \in [1, 3]$, $t_j \in [0.5, 20.5]$,
-$\theta_j \in [0, 2\pi)$: 9 values (72 B).
-
-\section{Circuit Approximation}
-
-Taylor approximation with $x' = x / 2^d$. At
-$(N_{\ln} = 10, N_{\cos} = 8)$: $B \approx 0.46$, feasible for
-$\varepsilon_{\mathrm{policy}} \ge 0.5$. Circuit: $\sim 315$ R1CS
-constraints.
-
-\section{Reference Implementation}
-\label{app:refimpl}
-
-A Python reference implementation accompanies this paper as a
-\emph{debug prototype}, not a production deployment. Its purpose is
-algorithmic verification: confirming that the signing and
-constraint-checking logic specified in \S\ref{sec:construction} are
-internally consistent and that tampering with any constrained field
-is detected. The prototype is \emph{not} a secure implementation of
-the scheme.
-
-\subsection*{Primitive Placeholders}
-
-Each cryptographic primitive used in the paper is replaced by a
-lightweight standard-library placeholder:
-\begin{center}
-\small
-\begin{tabular}{@{}lll@{}}
-\toprule
-Paper primitive & Prototype placeholder & Deployment target \\
-\midrule
-Poseidon & SHA-256 over canonical encoding & Poseidon over BLS12-381 \\
-Pedersen commitment $g^\varphi h^\delta f^r$ & HMAC-SHA256$(r; \varphi\|\delta)$ & Pedersen in $\mathbb{G}$ \\
-ZK proof $\pi$ & SHA-256 transcript hash & Groth16 / PLONK / Bulletproofs \\
-Merkle inclusion (ZK-W) & Sorted-list root hash & Merkle tree, depth $\approx 20$ \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-Security claims of \S\ref{sec:security}--\S\ref{sec:gasless} apply to
-the deployment primitives, not to the placeholders. The prototype
-inherits none of the hiding, succinctness, or knowledge-soundness
-properties of the real ZK system.
-
-\subsection*{Debug Verifier}
-
-In a production deployment, \textsf{Verify} has access only to the
-public inputs and the succinct proof $\pi$; it performs a single
-pairing check (Groth16) or a small constant number of group
-operations (PLONK), with cost $O(1)$ independent of circuit size.
-Soundness is extractor-based: no witness is revealed.
-
-The prototype verifier instead receives a private \emph{witness
-envelope} $\mathsf{env} = (p, r, \mathsf{wl\_env}, \mathsf{rl\_env})$
-and \emph{replays} each constraint explicitly. This is a deliberate
-design choice: replay yields direct, inspectable evidence that each
-constraint is active and that tampering is detected at the correct
-check, at the cost of sacrificing the zero-knowledge and succinctness
-properties of the real system. Replay is a debugging tool, not a
-verification model.
-
-\subsection*{Constraint Replay Coverage}
-
-The prototype replays constraints at varying granularities:
-\begin{center}
-\small
-\begin{tabular}{@{}lll@{}}
-\toprule
-Constraint & Prototype replay & Deployment form \\
-\midrule
-ZK-1 ($\delta < \varepsilon$) & Full: recompute $\varphi, \delta$ from $p$ & Range proof in circuit \\
-ZK-2 ($C$ opening) & Full: recompute commitment & Pedersen in circuit \\
-ZK-3 ($\mathsf{pk}$ binding) & Full: recompute $\mathsf{Poseidon}(p\|\tau)$ & Poseidon in circuit \\
-ZK-W (whitelist) & Set membership + root consistency & Merkle path verification \\
-ZK-R$^\dagger$ (rate limit) & Count-state replay & Hash-chain walk (RC-1, RC-2) \\
-\textsf{prev} (transcript) & Tamper-detected via transcript & Cross-signature chained \\
-Audit (\S\ref{sec:gasless}) & Witness-replayed sum of $\delta_i$ & Pedersen homomorphic $\prod C_i$ \\
-\bottomrule
-\end{tabular}
-\end{center}
-
-For ZK-W and ZK-R$^\dagger$, the prototype validates the
-\emph{admission predicate} (membership, count) but does not
-reconstruct the full Merkle path or prev-chain ancestry that the
-deployment circuit verifies. The R1CS cost estimates
-(\S\ref{sec:zk-r}, Appendix~\ref{app:based-rollup}) correspond to the
-deployment form, not the prototype.
-
-\subsection*{What the Prototype Establishes and What It Does Not}
-
-The prototype's test suite confirms: (i) \textsc{Sign} returns $\bot$
-exactly when $\delta \ge \varepsilon$, ZK-W fails, or ZK-R$^\dagger$
-fails; (ii) tampering with $x$, $C$, $\mathsf{pk}$, $\mathsf{prev}$,
-whitelist membership, or rate-limit count is detected by the replay
-verifier; (iii) the chain structure of \textsf{prev} pointers is
-consistent across sequential signatures; (iv) the behavioral bound of
-Corollary~\ref{cor:agent} holds empirically over randomized adversarial
-inputs---every accepted signature satisfies $\delta < \varepsilon$.
-
-The prototype does \emph{not} establish: succinctness of the proof,
-zero-knowledge hiding of the witness, extractor-based knowledge
-soundness, or any security property that requires the deployment
-primitives. These follow from the construction
-(\S\ref{sec:construction}, Theorem~\ref{thm:ps-cma}) when instantiated
-with the target primitives, not from the prototype itself.
-
-\section{Toward Based Rollup Integration (Preliminary)}
-\label{app:based-rollup}
-
-\emph{This appendix sketches how BBS-DAG can serve as L0 beneath a
-general-purpose zkEVM execution layer. The constructions below are
-design proposals, not formal results; a complete specification and
-security analysis are deferred to the BBS-DAG paper in preparation.}
-
-\subsection{Based Rollup Architecture}
-
-In a based rollup, L1 transactions embed L2 calldata in their payload.
-The DAG's topological ordering provides a deterministic transaction
-sequence. The zkEVM reads this sequence and executes in order.
-
-\paragraph{Transaction lifecycle.}
-\begin{enumerate}
-\item User generates a BBS signature over $(x, \mathsf{calldata})$,
-proving compliance (ZK-1), identity (ZK-3), rate limit (ZK-R$^\dagger$),
-contract whitelist (ZK-W), and hash-binding the zkEVM proof
-(ZK-EVM-bind).
-\item The signed transaction, including calldata payload, is
-submitted to the BBS-DAG.
-\item DAG consensus produces a deterministic ordering of all
-transactions.
-\item The zkEVM reads the ordered transaction stream from the DAG,
-executes calldata in sequence, and produces a batch ZK proof
-$\pi_{\mathrm{zkEVM}}$ attesting to the state transition.
-\item L0 validators verify: (a) each BBS proof, (b) the zkEVM batch
-proof (independent pairing check), (c) hash-bind consistency.
-\end{enumerate}
-
-\paragraph{Key property: DAG-as-sequencer.} Because BBS-DAG provides
-deterministic ordering, no separate sequencer is needed. This
-eliminates sequencer centralization, MEV extraction by sequencers,
-and the bridge-identity liveness problem. The DAG consensus layer
-requires only a sequencing protocol; all verification, anti-spam, and
-compliance functions are handled by BBS proofs independently. A
-parameterless DAG ordering protocol~\cite{dagknight} is a natural
-candidate: compliance safety ($f \le n{-}1$) does not depend on
-consensus liveness.
-
-\subsection{Contract Whitelist as a ZK Constraint (ZK-W)}
-
-We encode the whitelist in L0's ZK circuit rather than as a software
-check in L1:
-\begin{equation}
-\mathsf{contract\_addr} \in \mathcal{W}
-\tag{ZK-W}
-\end{equation}
-where $\mathcal{W}$ is a Merkle tree of approved contract addresses,
-root committed at key generation. Circuit cost: depth $\times$
-Poseidon $\approx 20 \times 250 = 5{,}000$ R1CS. If a contract
-address is not in $\mathcal{W}$, ZK-W is unsatisfiable: no BBS
-signature can reference that contract. An attacker deploying a
-malicious contract on L1 cannot invoke it through any BBS-signed
-transaction.
-
-\subsection{Hash-Bound Verification (ZK-EVM-bind)}
-
-Rather than embedding the full pairing check ($\sim 100$--200K
-constraints) inside the BBS circuit, we extract it:
-\begin{equation}
-H(\pi_{\mathrm{zkEVM}}) = h_{\mathrm{committed}}
-\tag{ZK-EVM-bind}
-\end{equation}
-The BBS circuit commits the zkEVM proof hash (one Poseidon, $\sim 250$
-R1CS). L0 validators perform two independent checks: (1) BBS
-ZKVerify, (2) zkEVM pairing, and confirm hash consistency. Security
-equivalence relies on Poseidon collision resistance~\cite{poseidon}:
-substituting a different proof $\pi' \ne \pi_{\mathrm{zkEVM}}$ with
-$H(\pi') = h_{\mathrm{committed}}$ requires a hash collision.
-
-\begin{table}[h]
-\centering
-\small
-\caption{Pairing-in-circuit vs.\ hash-bound verification.}
-\begin{tabular}{@{}lll@{}}
-\toprule
- & Pairing in circuit & Hash-bound \\
-\midrule
-BBS circuit size & $\sim 131$--231K & $\sim 31$K \\
-Proof generation & $\sim 130$--230 ms & $\sim 31$ ms \\
-Verification & 1 check ($\sim 3$ ms) & 2 checks ($\sim 5$ ms) \\
-Speedup (user) & 1$\times$ & 4--7$\times$ \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{State Anchoring Without a Bridge Identity}
-
-In the based rollup model, L1 state roots are anchored to L0 as
-follows. The zkEVM batch prover, after executing the ordered
-transaction stream, publishes $(\mathsf{state\_root}_{\mathrm{new}}, \pi_{\mathrm{zkEVM}})$
-as a special L0 transaction. L0 validators verify $\pi_{\mathrm{zkEVM}}$
-and record $\mathsf{state\_root}_{\mathrm{new}}$ in the DAG. Any L0
-identity can reference the latest state root via a DAG
-cross-reference (DAG-1).
-
-\subsection{Deposit, Withdrawal, and Supply Conservation}
-
-\paragraph{Deposit (L0 $\to$ L1).} User signs a BBS transaction on
-L0: ``burn $X$ tokens, destination L1 address $A$.'' The DAG records
-this burn. The zkEVM batch proof's statement includes an explicit
-deposit mapping constraint:
-\begin{equation}
-\forall~b \in \mathsf{Burns}_{\mathrm{batch}} : \mathsf{L1\_state}[b.\mathsf{addr}] \mathrel{+}= b.\mathsf{amt}
-\tag{DEP}
-\end{equation}
-That is, for every burn transaction $b$ in the DAG-ordered batch,
-the L1 state must contain a corresponding mint to address $b.\mathsf{addr}$
-of amount $b.\mathsf{amt}$. A prover that omits or redirects any
-deposit produces an invalid batch proof.
-
-\paragraph{Withdrawal (L1 $\to$ L0).} The zkEVM executes a burn on
-L1; the batch proof attests to the burn via:
-\begin{equation}
-\forall~w \in \mathsf{Withdrawals}_{\mathrm{batch}} : \mathsf{L1\_state}[w.\mathsf{addr}] \mathrel{-}= w.\mathsf{amt}
-\tag{WDR}
-\end{equation}
-The corresponding L0 mint is not signed by any identity. Instead, L0
-consensus applies a settlement rule: upon accepting a verified batch
-proof, the consensus protocol automatically creates mint UTXOs for
-each withdrawal entry in the proof's public output---analogous to
-Bitcoin's coinbase mechanism. No private key is involved; the mint
-is authorized by the batch proof's validity alone.
-
-\paragraph{Supply conservation with cross-verification.} The batch
-proof's public inputs include a Merkle root over all L0 burn
-transactions in the batch:
-\begin{equation}
-r_{\mathrm{burns}} = \mathsf{MerkleRoot}(\{b_1, b_2, \ldots, b_k\})
-\tag{CON-1}
-\end{equation}
-L0 validators independently compute $r_{\mathrm{burns}}$ from the
-DAG-ordered burn transactions and compare it against the batch
-proof's public input. Mismatch $\Rightarrow$ reject. The batch proof
-internally verifies:
-\begin{equation}
-\sum \mathsf{L0\_burns} + \sum \mathsf{L1\_burns} = \sum \mathsf{L0\_mints} + \sum \mathsf{L1\_mints}
-\tag{CON-2}
-\end{equation}
-This ensures that a malicious prover cannot fabricate deposits
-(inflating L1 supply) or suppress withdrawals (trapping L0 funds).
-Both CON-1 (cross-verified by L0 validators) and CON-2 (verified
-inside the batch proof) must hold simultaneously.
-
-\paragraph{State freshness.} L0 transactions that reference an L1
-state root include an epoch constraint:
-$\mathsf{epoch}_{\mathsf{state\_root}} \ge \mathsf{epoch}_{\mathrm{now}} - \Delta$,
-preventing stale-state attacks ($\sim 250$ R1CS).
-
-\subsection{L0/L1 Security Summary}
-
-Six L0 guarantees are cryptographic. Only L1's contract logic depends
-on audit---and ZK-W restricts execution to the audited set.
-
-\begin{table}[h]
-\centering
-\small
-\caption{L0/L1 security layering (based rollup, hash-bound).}
-\begin{tabular}{@{}lll@{}}
-\toprule
-Layer & Controls & Guarantee \\
-\midrule
-L0 (BBS proof): ZK-1 & $\delta < \varepsilon$ & Cryptographic \\
-L0 (BBS proof): ZK-R$^\dagger$ & Rate limit & Cryptographic \\
-L0 (BBS proof): ZK-W & Contract whitelist & Cryptographic \\
-L0 (BBS proof): ZK-EVM-bind & Proof binding & Cryptographic \\
-L0 (DAG consensus) & Sequencing, DA & Cryptographic \\
-L0 (independent): pairing & zkEVM validity & Cryptographic \\
-L1: zkEVM & Contract logic & Audit \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\paragraph{What must stay in L0.} $\delta < \varepsilon$, ZK-R$^\dagger$,
-and ZK-W can never be moved to L1: doing so would reduce them to
-software checks, destroying the ``No Software Can Override''
-guarantee. Only the pairing verification is safe to extract from the
-BBS circuit, secured by ZK-EVM-bind.
-
-\paragraph{Design alternatives.} Embedding the full zkEVM circuit
-inside the BBS proof achieves path-level compliance at 40--400$\times$
-cost ($\sim 10^6$ constraints); hash-bound separation achieves
-result-level compliance at $\sim 31$K constraints. Both inherit
-PS-CMA at L0. Existing UTXO-DAG rollup designs that rely on indexer
-trust or bridge multisigs are replaced by cryptographic batch-proof
-verification.
 
 \end{document}
