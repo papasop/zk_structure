@@ -617,13 +617,37 @@ def _verify_ptau(ptau):
     Colab runtime disconnects mid-ceremony can leave a ~correct-size but
     internally truncated .ptau file. `snarkjs powersoftau verify` reads
     through all sections and fails with 'Reading out of the range of the
-    section' if the file is truncated. Returns True if verify passes.
+    section' if the file is truncated.
+
+    Returns (ok: bool, diag: str). On failure, diag holds the last few
+    lines of snarkjs output so the caller can show the user WHY verify
+    failed (FIX Issue #22: don't blame Colab disconnects when the real
+    cause is something else like a curve or version mismatch).
     """
     r = subprocess.run(
         f"npx snarkjs powersoftau verify {ptau}",
         shell=True, capture_output=True, text=True,
     )
-    return r.returncode == 0
+    if r.returncode == 0:
+        return True, ""
+    # Grab the most informative tail (last 5 lines of stderr if any, else stdout)
+    err = (r.stderr or r.stdout or "").strip().splitlines()
+    diag = "\n    ".join(err[-5:]) if err else "(no output)"
+    return False, diag
+
+
+def _verify_zkey(r1cs, ptau, zkey):
+    """FIX Issue #13: verify zkey against its circuit and ptau.
+    FIX Issue #22: return diagnostic context, not just bool."""
+    r = subprocess.run(
+        f"npx snarkjs zkey verify {r1cs} {ptau} {zkey}",
+        shell=True, capture_output=True, text=True,
+    )
+    if r.returncode == 0:
+        return True, ""
+    err = (r.stderr or r.stdout or "").strip().splitlines()
+    diag = "\n    ".join(err[-5:]) if err else "(no output)"
+    return False, diag
 
 
 def phase_powers_of_tau():
@@ -635,11 +659,18 @@ def phase_powers_of_tau():
     # FIX Issue #13: existence alone is not enough — verify the file parses.
     if os.path.exists(ptau):
         print(f"  {ptau} exists ({os.path.getsize(ptau)/1e6:.1f} MB); verifying...")
-        if _verify_ptau(ptau):
+        ok, diag = _verify_ptau(ptau)
+        if ok:
             print(f"  ptau verified OK; skipping regeneration.")
             return ptau
-        print(f"  WARNING: ptau failed integrity check (likely truncated by a")
-        print(f"  previous Colab disconnect). Regenerating from scratch.")
+        # FIX Issue #22: surface WHY verification failed so unusual causes
+        # (e.g., wrong curve, snarkjs version mismatch) can be diagnosed.
+        # The "Colab disconnect" wording is the most common cause but not
+        # the only one.
+        print(f"  WARNING: ptau failed integrity check. snarkjs reported:")
+        print(f"    {diag}")
+        print(f"  Most likely cause: previous Colab disconnect truncated the file.")
+        print(f"  Regenerating from scratch.")
         os.remove(ptau)
         # Also invalidate downstream artifacts that depended on this ptau.
         for stale in (p("build/bbs_final.zkey"), p("build/verification_key.json")):
@@ -668,22 +699,15 @@ def phase_powers_of_tau():
         except FileNotFoundError: pass
 
     # FIX Issue #13: verify what we just produced, so a bad ceremony fails fast.
-    if not _verify_ptau(ptau):
+    ok, diag = _verify_ptau(ptau)
+    if not ok:
         raise RuntimeError(
-            f"Freshly generated ptau at {ptau} failed verification. "
-            f"This usually means the ceremony was interrupted; re-run."
+            f"Freshly generated ptau at {ptau} failed verification.\n"
+            f"  snarkjs output: {diag}\n"
+            f"  This usually means the ceremony was interrupted; re-run."
         )
     print(f"  Done in {time.time()-t0:.0f}s  ({os.path.getsize(ptau)/1e6:.1f} MB, verified)")
     return ptau
-
-
-def _verify_zkey(r1cs, ptau, zkey):
-    """FIX Issue #13: verify zkey against its circuit and ptau."""
-    r = subprocess.run(
-        f"npx snarkjs zkey verify {r1cs} {ptau} {zkey}",
-        shell=True, capture_output=True, text=True,
-    )
-    return r.returncode == 0
 
 
 def phase_groth16_setup(ptau):
