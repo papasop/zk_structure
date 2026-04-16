@@ -21,10 +21,10 @@ This prototype does NOT model:
 In real deployment (Groth16/PLONK over BLS12-381), the verifier has NO
 witness and checks a succinct proof via a single pairing check, O(1).
 
-Placeholder mapping (Appendix C):
+Placeholder mapping (Appendix C of paper):
   SHA-256     -> Poseidon
   HMAC-SHA256 -> Pedersen commitment
-  Replay      -> ZK proof verification
+  Transcript hash -> ZK proof
 """
 
 import hashlib, hmac, math, os, json, time
