@@ -49,18 +49,18 @@ violate or revoke this commitment.
 We formalize this as \emph{policy-soundness} (PS-CMA), a security
 model strictly stronger than EUF-CMA, and prove it under standard
 assumptions (Pedersen binding, Poseidon CR, ZK knowledge soundness).
-From this single primitive, five independent consequences
-follow---not as separate designs, but as necessary implications of
-one cryptographic root: (A) compliance safety under $f \le n{-}1$
-Byzantine faults, decoupled from honest-quorum assumptions; (B)
-$O(1)$ verification and audit via a single ZK check and Pedersen
-homomorphic aggregation; (C) elimination of the virtual-machine
-execution layer \emph{for policy-constrained transactions}; (D) a
-gasless ledger: branch~C removes metering, while ZK-encoded rate
-limits (ZK-R$^\dagger$, $\sim$25K R1CS constraints at $N{=}100$) make
-spam \emph{mathematically nonexistent} rather than economically
-discouraged; (E) the first cryptographic guarantee that a compromised
+From this single primitive, five consequences follow: (A)~compliance
+safety under $f \le n{-}1$ Byzantine faults, decoupled from
+honest-quorum assumptions; (B)~$O(1)$ verification and audit via a
+single ZK check and homomorphic aggregation; (C)~elimination of the
+virtual-machine execution layer \emph{for policy-constrained
+transactions}; (D)~a gasless ledger in which spam is
+\emph{mathematically nonexistent} rather than economically
+discouraged; (E)~the first cryptographic guarantee that a compromised
 autonomous AI agent cannot exceed its authorized behavioral envelope.
+Branches A, B, C, E are independent consequences of PS-CMA; D is
+derived from C and from a rate-limiting extension we detail in
+\S\ref{sec:gasless}.
 \end{abstract}
 
 \noindent\textbf{Keywords:} behavior-bound signatures, policy-soundness,
@@ -68,40 +68,6 @@ zero-knowledge proofs, gasless ledger, execution-free blockchain,
 AI agent safety
 
 \section{Introduction}
-
-\subsection{The Core Thesis: One Primitive, Five Consequences}
-
-This paper shows that a single cryptographic primitive---policy-soundness
-(PS-CMA)---yields five independent consequences. Two of these converge
-to produce a gasless ledger architecture.
-
-Branches A, B, C, and E are independent consequences of PS-CMA---none
-depends on another. The gasless property (D+D$'$) is the only derived
-result: D depends on C (no execution layer $\Rightarrow$ no metering),
-while D$'$ depends directly on PS-CMA via the prev-chain structure.
-The paper presents branches in sequence for readability, but the
-logical structure is a tree, not a chain.
-
-\begin{table}[h]
-\centering
-\small
-\caption{The BBS consequence tree. All branches root in PS-CMA
-(Thm.~\ref{thm:ps-cma}). ``Depends on'' shows the true logical
-dependency, not the presentation order.}
-\label{tab:tree}
-\begin{tabular}{@{}llll@{}}
-\toprule
-Result & & Mechanism & Depends on \\
-\midrule
-A & $f \le n{-}1$ safety & Verification is local & PS-CMA \\
-B & $O(1)$ verification & Single \textsf{ZKVerify} call & PS-CMA + proof system \\
-C & No execution layer \emph{(policy-constrained txns)} & ZK-1--5 unified circuit & PS-CMA + circuit design \\
-D & No gas (metering) & No opcodes to meter & Branch C \\
-D$'$ & No gas (DoS) & ZK-R$^\dagger$ rate limit & PS-CMA + prev-chain \\
-E & AI agent safety & Cor.~\ref{cor:agent} & PS-CMA \\
-\bottomrule
-\end{tabular}
-\end{table}
 
 \subsection{Unrestricted Signing in an Age of Delegation}
 
@@ -114,7 +80,8 @@ keys. An agent may be compromised by prompt injection, contain bugs,
 or be maliciously modified. Current mitigations---multi-signature,
 smart-contract guards, hardware enclaves---share a common
 vulnerability: the constraint lives outside the signature's
-mathematical structure.
+mathematical structure. We call this the \emph{software-layer
+assumption}, and this paper shows how to remove it.
 
 \subsection{Cryptographic Self-Restriction}
 
@@ -146,26 +113,69 @@ Security basis & Key secrecy & + ZK soundness \\
 \end{tabular}
 \end{table}
 
+\subsection{One Primitive, Five Consequences}
+
+From PS-CMA, five independent consequences follow---not as separate
+designs, but as necessary implications of one cryptographic root.
+Two of these converge to produce a gasless ledger architecture.
+
+Branches A, B, C, and E are independent consequences of PS-CMA---none
+depends on another. The gasless property (D+D$'$) is the only derived
+result: D depends on C (no execution layer $\Rightarrow$ no metering),
+while D$'$ depends directly on PS-CMA via the prev-chain structure.
+The paper presents branches in sequence for readability, but the
+logical structure is a tree, not a chain.
+
+\begin{table}[h]
+\centering
+\small
+\caption{The BBS consequence tree. All branches root in PS-CMA
+(Thm.~\ref{thm:ps-cma}). ``Depends on'' shows the true logical
+dependency, not the presentation order.}
+\label{tab:tree}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Result & & Mechanism & Depends on \\
+\midrule
+A & $f \le n{-}1$ safety & Verification is local & PS-CMA \\
+B & $O(1)$ verification & Single \textsf{ZKVerify} call & PS-CMA + proof system \\
+C & No execution layer \emph{(policy-constrained txns)} & ZK-1--5 unified circuit & PS-CMA + circuit design \\
+D & No gas (metering) & No opcodes to meter & Branch C \\
+D$'$ & No gas (DoS) & ZK-R$^\dagger$ rate limit & PS-CMA + prev-chain \\
+E & AI agent safety & Cor.~\ref{cor:agent} & PS-CMA \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{Contributions}
+
+\paragraph{Primary contributions.}
 \begin{enumerate}[leftmargin=*]
 \item \textbf{Behavior-bound signatures}: first cryptographic
-self-restriction of signing (\S\ref{sec:prelim}).
-\item \textbf{PS-CMA}: security model strictly stronger than EUF-CMA
-(\S\ref{sec:ps-cma}).
-\item \textbf{Construction and proof}: from standard primitives
-(\S\ref{sec:construction}--\S\ref{sec:security}).
-\item \textbf{$f \le n{-}1$ safety}: compliance decoupled from quorum
-(\S\ref{sec:security}).
-\item \textbf{AI agent safety}: five attack classes blocked
-(\S\ref{sec:agent}).
-\item \textbf{Execution-free validation for policy-constrained
-transactions}: ZK circuit subsumes VM within this class
-(\S\ref{sec:branch-c}).
-\item \textbf{Gasless ledger}: compliance-weighted consensus
-(\S\ref{sec:gasless}).
-\item \textbf{$O(1)$ audit}: homomorphic aggregation
-(\S\ref{sec:gasless}).
+self-restriction of signing, in which the signer binds their own
+future behavior at key generation (\S\ref{sec:prelim}).
+\item \textbf{PS-CMA}: security model strictly stronger than EUF-CMA,
+capturing policy-bound unforgeability (\S\ref{sec:ps-cma}).
+\item \textbf{Construction and proof}: BBS from standard primitives
+(Pedersen, Poseidon, Groth16), proven PS-CMA under their standard
+assumptions (\S\ref{sec:construction}--\S\ref{sec:security}).
 \end{enumerate}
+
+\paragraph{Consequences of PS-CMA.} Independent (A, B, C, E) or
+derived (D) implications, each developed in a later section:
+\begin{itemize}[leftmargin=*]
+\item (A) $f \le n{-}1$ safety: compliance decoupled from quorum
+assumptions (\S\ref{sec:security}).
+\item (B) $O(1)$ verification and homomorphic audit
+(\S\ref{sec:gasless}).
+\item (C) Execution-free validation for policy-constrained
+transactions: the ZK circuit subsumes the VM within this class
+(\S\ref{sec:branch-c}).
+\item (D) Gasless ledger: compliance-weighted consensus with
+ZK-encoded rate limits (\S\ref{sec:gasless}).
+\item (E) AI agent safety: five attack classes blocked
+(\S\ref{sec:agent}).
+\end{itemize}
 
 \section{Preliminaries and Model}
 \label{sec:prelim}
