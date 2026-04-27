@@ -6,6 +6,7 @@ import unittest
 from pathlib import Path
 
 from structural_crypto.crypto.policy import PolicyCommitment
+from structural_crypto.app.wallet_web import render_wallet_page
 from structural_crypto.l1 import SimpleL1Executor
 from structural_crypto.ledger import Blockchain
 from structural_crypto.node import Wallet
@@ -165,6 +166,15 @@ class NodeL1ZKTests(unittest.TestCase):
         self.assertEqual(restored.name, wallet.name)
         self.assertEqual(restored.mnemonic, wallet.mnemonic)
         self.assertEqual(restored.address, wallet.address)
+
+    def test_render_wallet_page_contains_address_and_balance(self) -> None:
+        chain = Blockchain(difficulty=1, allow_new_producers=True)
+        wallet = Wallet.create("alice", seed="alice-seed")
+        chain.faucet(wallet.address, 9)
+        page = render_wallet_page(chain, wallet)
+        self.assertIn(wallet.address, page)
+        self.assertIn("9", page)
+        self.assertIn("Mnemonic", page)
 
     def test_gossip_envelope_forward_decrements_ttl(self) -> None:
         envelope = GossipEnvelope(kind="block", origin="node-a", payload={"block_hash": "abc"}, ttl=3)

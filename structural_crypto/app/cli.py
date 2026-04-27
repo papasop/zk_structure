@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from structural_crypto.app.demo import build_demo_chain, run_demo
+from structural_crypto.app.wallet_web import serve_wallet_page
 from structural_crypto.crypto.policy import PolicyCommitment
 from structural_crypto.ledger.blockchain import Blockchain
 from structural_crypto.node import Wallet
@@ -159,6 +160,13 @@ def main() -> None:
     balance_parser.add_argument("--wallet-path", help="wallet JSON path")
     balance_parser.add_argument("--wallet-name", help="wallet name if using default wallet path")
 
+    wallet_page_parser = subparsers.add_parser("wallet-page", help="serve a minimal local wallet HTTP page")
+    wallet_page_parser.add_argument("--path", help="path to the state JSON file")
+    wallet_page_parser.add_argument("--wallet-path", help="wallet JSON path")
+    wallet_page_parser.add_argument("--wallet-name", help="wallet name if using default wallet path")
+    wallet_page_parser.add_argument("--host", default="127.0.0.1", help="bind host")
+    wallet_page_parser.add_argument("--port", type=int, default=8765, help="bind port")
+
     args = parser.parse_args()
     if args.command == "demo":
         print(json.dumps(run_demo(), indent=2, sort_keys=True))
@@ -204,6 +212,15 @@ def main() -> None:
         target = _resolve_wallet_path(args.path, args.name)
         wallet = Wallet.load(target)
         print(json.dumps({"address": wallet.address, "name": wallet.name, "path": str(target)}, indent=2, sort_keys=True))
+        return
+
+    if args.command == "wallet-page":
+        serve_wallet_page(
+            chain_path=_resolve_state_path(args.path),
+            wallet_path=_resolve_wallet_path(args.wallet_path, args.wallet_name),
+            host=args.host,
+            port=args.port,
+        )
         return
 
     if args.command == "save":
