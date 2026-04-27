@@ -410,6 +410,92 @@ class BlockchainTests(unittest.TestCase):
         self.assertIn(a.address, totals)
         self.assertGreater(totals[a.address], 0.0)
 
+    def test_virtual_order_rejects_parallel_double_spend(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+        )
+        alice = Wallet("alice", "alice-seed")
+        bob = Wallet("bob", "bob-seed")
+        prod_a = Wallet("prod-a", "prod-a-seed")
+        prod_b = Wallet("prod-b", "prod-b-seed")
+        chain.faucet(alice.address, 50)
+        policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
+
+        tx1 = chain.build_transaction(
+            key=alice.key,
+            recipients=[(bob.address, 10)],
+            policy=policy,
+            timestamp=100,
+        )
+        tx2 = chain.build_transaction(
+            key=alice.key,
+            recipients=[(bob.address, 10)],
+            policy=policy,
+            timestamp=101,
+        )
+        parent = chain.blocks[-1].block_hash
+
+        a_state = chain._identity_state(prod_a.address)
+        a_state.phase = "mature"
+        a_state.compliant_txs = 30
+        a_state.average_delta = 0.1
+
+        b_state = chain._identity_state(prod_b.address)
+        b_state.phase = "mature"
+        b_state.compliant_txs = 20
+        b_state.average_delta = 0.2
+
+        block_a = chain.build_candidate_block(prod_a.address, transactions=[tx1], parents=[parent])
+        block_b = chain.build_candidate_block(prod_b.address, transactions=[tx2], parents=[parent])
+        chain.accept_block(block_a)
+        chain.accept_block(block_b)
+
+        resolved = chain.resolved_virtual_blocks()
+        accepted = chain.accepted_virtual_transactions()
+        self.assertIn(tx1.txid, accepted)
+        self.assertNotIn(tx2.txid, accepted)
+        self.assertTrue(any(tx2.txid in item["rejected_txids"] for item in resolved))
+
+    def test_virtual_resolution_rejects_same_sender_sequence_conflict(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+        )
+        alice = Wallet("alice", "alice-seed")
+        bob = Wallet("bob", "bob-seed")
+        prod_a = Wallet("prod-a", "prod-a-seed")
+        prod_b = Wallet("prod-b", "prod-b-seed")
+        chain.faucet(alice.address, 50)
+        policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
+
+        tx1 = chain.build_transaction(
+            key=alice.key,
+            recipients=[(bob.address, 10)],
+            policy=policy,
+            timestamp=100,
+        )
+        tx2 = replace(
+            tx1,
+            txid="conflict-seq",
+            message=tx1.message + "|fork",
+        )
+        parent = chain.blocks[-1].block_hash
+
+        chain._identity_state(prod_a.address).phase = "mature"
+        chain._identity_state(prod_b.address).phase = "mature"
+
+        block_a = chain.build_candidate_block(prod_a.address, transactions=[tx1], parents=[parent])
+        block_b = chain.build_candidate_block(prod_b.address, transactions=[tx2], parents=[parent])
+        chain.accept_block(block_a)
+        chain.accept_block(block_b)
+
+        accepted = chain.accepted_virtual_transactions()
+        kept = [txid for txid in (tx1.txid, tx2.txid) if txid in accepted]
+        self.assertEqual(len(kept), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

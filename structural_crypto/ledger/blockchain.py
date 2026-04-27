@@ -459,6 +459,38 @@ class Blockchain:
     def confirmed_order(self) -> List[str]:
         return [block_hash for block_hash in self.virtual_order() if self.is_confirmed(block_hash)]
 
+    def resolved_virtual_blocks(self) -> List[dict]:
+        spent_inputs: set[Tuple[str, int]] = set()
+        claimed_slots: set[Tuple[str, int]] = set()
+        resolved: List[dict] = []
+        for block_hash in self.virtual_order():
+            block = self.block_by_hash[block_hash]
+            accepted_txids: List[str] = []
+            rejected_txids: List[str] = []
+            for tx in block.transactions:
+                if self._transaction_conflicts_in_virtual_order(tx, spent_inputs, claimed_slots):
+                    rejected_txids.append(tx.txid)
+                    continue
+                accepted_txids.append(tx.txid)
+                for tx_input in tx.inputs:
+                    spent_inputs.add((tx_input.prev_txid, tx_input.output_index))
+                if tx.sender != "GENESIS":
+                    claimed_slots.add((tx.sender, tx.sequence))
+            resolved.append(
+                {
+                    "block_hash": block_hash,
+                    "accepted_txids": accepted_txids,
+                    "rejected_txids": rejected_txids,
+                }
+            )
+        return resolved
+
+    def accepted_virtual_transactions(self) -> List[str]:
+        accepted: List[str] = []
+        for item in self.resolved_virtual_blocks():
+            accepted.extend(item["accepted_txids"])
+        return accepted
+
     def confirmed_reward_for_block(self, block_hash: str) -> float:
         if block_hash not in self.block_by_hash:
             raise ValidationError("unknown block for reward accounting")
@@ -825,6 +857,19 @@ class Blockchain:
     def _trim_epochs(self, epochs: List[int], current_epoch: int) -> List[int]:
         cutoff = current_epoch - self.rate_limit_window
         return [epoch for epoch in epochs if epoch >= cutoff]
+
+    @staticmethod
+    def _transaction_conflicts_in_virtual_order(
+        tx: Transaction,
+        spent_inputs: set[Tuple[str, int]],
+        claimed_slots: set[Tuple[str, int]],
+    ) -> bool:
+        for tx_input in tx.inputs:
+            if (tx_input.prev_txid, tx_input.output_index) in spent_inputs:
+                return True
+        if tx.sender != "GENESIS" and (tx.sender, tx.sequence) in claimed_slots:
+            return True
+        return False
 
     def _select_block_parents(self, producer_id: str) -> List[str]:
         main_parent = self.blocks[-1].block_hash
