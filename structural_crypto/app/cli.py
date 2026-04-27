@@ -58,6 +58,18 @@ def main() -> None:
     )
     resolved_parser.add_argument("--path", help="path to the state JSON file")
 
+    l1_parser = subparsers.add_parser(
+        "show-l1-feed",
+        help="show the exported L1 feed from a saved state",
+    )
+    l1_parser.add_argument("--path", help="path to the state JSON file")
+    l1_parser.add_argument(
+        "--mode",
+        choices=["confirmed", "virtual"],
+        default="confirmed",
+        help="feed scope to export",
+    )
+
     args = parser.parse_args()
     if args.command == "demo":
         print(json.dumps(run_demo(), indent=2, sort_keys=True))
@@ -140,6 +152,17 @@ def main() -> None:
                     "accepted_virtual_transactions": chain.accepted_virtual_transactions(),
                     "resolved_virtual_blocks": chain.resolved_virtual_blocks(),
                 },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
+    if args.command == "show-l1-feed":
+        confirmed_only = args.mode == "confirmed"
+        print(
+            json.dumps(
+                chain.export_l1_feed(confirmed_only=confirmed_only),
                 indent=2,
                 sort_keys=True,
             )

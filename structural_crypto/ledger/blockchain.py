@@ -570,6 +570,92 @@ class Blockchain:
     def confirmed_order(self) -> List[str]:
         return [block_hash for block_hash in self.virtual_order() if self.is_confirmed(block_hash)]
 
+    def confirmed_l1_batch(self) -> dict:
+        confirmed_blocks = self.confirmed_order()
+        resolved_map = {
+            item["block_hash"]: item for item in self.resolved_virtual_blocks()
+        }
+        blocks: List[dict] = []
+        transactions: List[dict] = []
+        for block_hash in confirmed_blocks:
+            block = self.block_by_hash[block_hash]
+            resolved = resolved_map.get(
+                block_hash,
+                {"accepted_txids": [], "rejected_txids": []},
+            )
+            blocks.append(
+                {
+                    "block_hash": block.block_hash,
+                    "index": block.index,
+                    "parents": list(block.parents),
+                    "producer_id": block.producer_id,
+                    "producer_phase": block.producer_phase,
+                    "producer_ordering_score": block.producer_ordering_score,
+                    "aggregate_delta": block.aggregate_delta,
+                    "timestamp": block.timestamp,
+                    "accepted_txids": list(resolved["accepted_txids"]),
+                    "rejected_txids": list(resolved["rejected_txids"]),
+                    "confirmed_reward": self.confirmed_reward_for_block(block_hash),
+                }
+            )
+            accepted_txids = set(resolved["accepted_txids"])
+            for tx in block.transactions:
+                if tx.txid not in accepted_txids:
+                    continue
+                transactions.append(self._l1_transaction_record(tx, block))
+        return {
+            "mode": "confirmed",
+            "block_hashes": confirmed_blocks,
+            "blocks": blocks,
+            "transactions": transactions,
+        }
+
+    def export_l1_feed(self, confirmed_only: bool = True) -> dict:
+        if confirmed_only:
+            batch = self.confirmed_l1_batch()
+            batch["feed_scope"] = "confirmed"
+            return batch
+
+        resolved_blocks = self.resolved_virtual_blocks()
+        resolved_map = {item["block_hash"]: item for item in resolved_blocks}
+        transactions: List[dict] = []
+        blocks: List[dict] = []
+        for block_hash in self.virtual_order():
+            block = self.block_by_hash[block_hash]
+            resolved = resolved_map.get(
+                block_hash,
+                {"accepted_txids": [], "rejected_txids": []},
+            )
+            blocks.append(
+                {
+                    "block_hash": block.block_hash,
+                    "index": block.index,
+                    "parents": list(block.parents),
+                    "producer_id": block.producer_id,
+                    "producer_phase": block.producer_phase,
+                    "producer_ordering_score": block.producer_ordering_score,
+                    "aggregate_delta": block.aggregate_delta,
+                    "timestamp": block.timestamp,
+                    "confirmed": self.is_confirmed(block_hash),
+                    "accepted_txids": list(resolved["accepted_txids"]),
+                    "rejected_txids": list(resolved["rejected_txids"]),
+                }
+            )
+            accepted_txids = set(resolved["accepted_txids"])
+            for tx in block.transactions:
+                if tx.txid not in accepted_txids:
+                    continue
+                tx_record = self._l1_transaction_record(tx, block)
+                tx_record["confirmed"] = self.is_confirmed(block_hash)
+                transactions.append(tx_record)
+        return {
+            "mode": "virtual",
+            "feed_scope": "resolved_virtual",
+            "block_hashes": self.virtual_order(),
+            "blocks": blocks,
+            "transactions": transactions,
+        }
+
     def resolved_virtual_blocks(self) -> List[dict]:
         spent_inputs: set[Tuple[str, int]] = set()
         claimed_slots: set[Tuple[str, int]] = set()
@@ -703,6 +789,39 @@ class Blockchain:
             ),
             timestamp=timestamp,
         )
+
+    def _l1_transaction_record(self, tx: Transaction, block: Block) -> dict:
+        return {
+            "txid": tx.txid,
+            "sender": tx.sender,
+            "trajectory_id": tx.trajectory_id,
+            "prev": tx.prev,
+            "sequence": tx.sequence,
+            "epoch": tx.epoch,
+            "policy_hash": tx.policy_hash,
+            "delta": tx.delta,
+            "sender_head_commitment": tx.sender_head_commitment,
+            "inputs": [
+                {
+                    "prev_txid": tx_input.prev_txid,
+                    "output_index": tx_input.output_index,
+                    "owner": tx_input.owner,
+                }
+                for tx_input in tx.inputs
+            ],
+            "outputs": [
+                {
+                    "amount": output.amount,
+                    "recipient": output.recipient,
+                }
+                for output in tx.outputs
+            ],
+            "block_hash": block.block_hash,
+            "producer_id": block.producer_id,
+            "producer_phase": block.producer_phase,
+            "producer_ordering_score": block.producer_ordering_score,
+            "block_timestamp": block.timestamp,
+        }
 
     def _build_block(
         self,

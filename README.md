@@ -166,6 +166,14 @@ See:
 
 - [docs/POCT_L1_INTERFACE_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_L1_INTERFACE_SPEC.md)
 
+## PoCT L1 Batching
+
+The repository now also defines how confirmed `L0` history should be grouped into deterministic `L1` execution batches and future checkpoints.
+
+See:
+
+- [docs/POCT_L1_BATCH_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_L1_BATCH_SPEC.md)
+
 ## PoCT Persistence
 
 The current prototype now includes:

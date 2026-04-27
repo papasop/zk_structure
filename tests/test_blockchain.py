@@ -414,6 +414,73 @@ class BlockchainTests(unittest.TestCase):
         self.assertIn(a.address, totals)
         self.assertGreater(totals[a.address], 0.0)
 
+    def test_confirmed_l1_batch_exports_confirmed_transactions(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            producer_reward=5,
+            allow_new_producers=True,
+            confirmation_threshold=0.5,
+        )
+        alice = Wallet("alice", "alice-seed")
+        bob = Wallet("bob", "bob-seed")
+        prod_a = Wallet("prod-a", "prod-a-seed")
+        prod_b = Wallet("prod-b", "prod-b-seed")
+        chain.faucet(alice.address, 50)
+        policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
+
+        tx = chain.build_transaction(
+            key=alice.key,
+            recipients=[(bob.address, 10)],
+            policy=policy,
+            timestamp=100,
+        )
+        parent = chain.blocks[-1].block_hash
+
+        chain._identity_state(prod_a.address).phase = "mature"
+        chain._identity_state(prod_a.address).compliant_txs = 30
+        chain._identity_state(prod_b.address).phase = "mature"
+        chain._identity_state(prod_b.address).compliant_txs = 30
+
+        block_a = chain.build_candidate_block(prod_a.address, transactions=[tx], parents=[parent])
+        chain.accept_block(block_a)
+        block_b = chain.build_candidate_block(prod_b.address, transactions=[], parents=[block_a.block_hash])
+        chain.accept_block(block_b)
+
+        batch = chain.confirmed_l1_batch()
+        self.assertEqual(batch["mode"], "confirmed")
+        self.assertIn(block_a.block_hash, batch["block_hashes"])
+        self.assertTrue(any(item["txid"] == tx.txid for item in batch["transactions"]))
+        tx_record = next(item for item in batch["transactions"] if item["txid"] == tx.txid)
+        self.assertEqual(tx_record["sender"], alice.address)
+        self.assertEqual(tx_record["producer_id"], prod_a.address)
+
+    def test_export_l1_feed_virtual_marks_confirmation_status(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            producer_reward=5,
+            allow_new_producers=True,
+            confirmation_threshold=1.0,
+        )
+        prod_a = Wallet("prod-a", "prod-a-seed")
+        prod_b = Wallet("prod-b", "prod-b-seed")
+        chain._identity_state(prod_a.address).phase = "mature"
+        chain._identity_state(prod_a.address).compliant_txs = 30
+        chain._identity_state(prod_b.address).phase = "mature"
+        chain._identity_state(prod_b.address).compliant_txs = 30
+
+        parent = chain.blocks[-1].block_hash
+        block_a = chain.build_candidate_block(prod_a.address, transactions=[], parents=[parent])
+        chain.accept_block(block_a)
+        block_b = chain.build_candidate_block(prod_b.address, transactions=[], parents=[block_a.block_hash])
+        chain.accept_block(block_b)
+
+        feed = chain.export_l1_feed(confirmed_only=False)
+        self.assertEqual(feed["mode"], "virtual")
+        self.assertEqual(feed["feed_scope"], "resolved_virtual")
+        block_map = {item["block_hash"]: item for item in feed["blocks"]}
+        self.assertTrue(block_map[block_a.block_hash]["confirmed"])
+        self.assertFalse(block_map[block_b.block_hash]["confirmed"])
+
     def test_virtual_order_rejects_parallel_double_spend(self) -> None:
         chain = Blockchain(
             difficulty=1,
@@ -701,6 +768,40 @@ class BlockchainTests(unittest.TestCase):
                 check=True,
             )
             self.assertIn("\"resolved_virtual_blocks\"", show_resolved.stdout)
+
+    def test_cli_show_l1_feed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "chain.json"
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "persist-demo",
+                    "--path",
+                    str(state_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            show_l1 = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "show-l1-feed",
+                    "--path",
+                    str(state_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("\"transactions\"", show_l1.stdout)
+            self.assertIn("\"mode\": \"confirmed\"", show_l1.stdout)
 
 
 if __name__ == "__main__":
