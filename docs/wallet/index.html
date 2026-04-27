@@ -23,7 +23,7 @@
         radial-gradient(circle at top, #fffdf8 0%, #f7f3ea 35%, var(--bg) 100%);
     }
     .wrap {
-      max-width: 1120px;
+      max-width: 1140px;
       margin: 32px auto 64px;
       padding: 0 18px;
     }
@@ -35,8 +35,7 @@
     }
     .hero {
       padding: 24px 28px;
-      background:
-        linear-gradient(135deg, rgba(255,250,243,0.98), rgba(238,247,243,0.98));
+      background: linear-gradient(135deg, rgba(255,250,243,0.98), rgba(238,247,243,0.98));
     }
     .eyebrow {
       text-transform: uppercase;
@@ -63,6 +62,12 @@
       gap: 16px;
       margin-top: 18px;
     }
+    .grid-two {
+      display: grid;
+      grid-template-columns: minmax(340px, 1.1fr) minmax(300px, 0.9fr);
+      gap: 16px;
+      margin-top: 18px;
+    }
     .card { padding: 18px; }
     .label {
       text-transform: uppercase;
@@ -70,6 +75,10 @@
       font-size: 12px;
       color: var(--muted);
       margin-bottom: 8px;
+    }
+    .section-title {
+      margin: 0 0 10px;
+      font-size: 22px;
     }
     .value {
       font-size: 15px;
@@ -81,7 +90,12 @@
       color: var(--accent);
       line-height: 1;
     }
-    textarea, input[type="text"], input[type="number"] {
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    textarea, input[type="text"] {
       width: 100%;
       padding: 12px 14px;
       border-radius: 12px;
@@ -96,6 +110,11 @@
       gap: 10px;
       flex-wrap: wrap;
       margin-top: 12px;
+    }
+    .stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
     }
     button, .file-label {
       border: 1px solid var(--line);
@@ -115,8 +134,11 @@
       color: white;
       border-color: var(--accent);
     }
+    button.secondary {
+      background: #f8f3ea;
+    }
     .file-label input { display: none; }
-    code, pre {
+    code, pre, .mono {
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
     }
     pre {
@@ -140,6 +162,19 @@
       margin-right: 8px;
       margin-bottom: 8px;
     }
+    .status {
+      min-height: 20px;
+      color: var(--accent);
+      font-size: 13px;
+    }
+    .receive {
+      background: linear-gradient(180deg, #fffdf9, #f4fbf8);
+    }
+    @media (max-width: 860px) {
+      .grid-two {
+        grid-template-columns: 1fr;
+      }
+    }
   </style>
 </head>
 <body>
@@ -148,32 +183,41 @@
       <div class="eyebrow">PoCT Wallet</div>
       <h1>GitHub Pages Wallet</h1>
       <div class="sub">
-        A static browser wallet for the current PoCT prototype. It derives an address from a 12-word mnemonic in-browser,
-        can import a local wallet JSON file, and can read a local chain state JSON file to display the current balance.
+        A static browser wallet for the current PoCT prototype. It derives a wallet address locally from a 12-word mnemonic,
+        can import CLI wallet JSON, and can read a local chain state JSON file to display balances and network status.
       </div>
     </section>
 
-    <section class="grid">
+    <section class="grid-two">
       <div class="card">
-        <div class="label">Mnemonic</div>
-        <textarea id="mnemonic" placeholder="Enter 12 words or click Generate"></textarea>
-        <div class="row">
-          <button class="primary" id="generateMnemonic">Generate 12 Words</button>
-          <label class="file-label">
-            Load Wallet JSON
-            <input id="walletFile" type="file" accept=".json,application/json">
-          </label>
+        <div class="label">Wallet Access</div>
+        <h2 class="section-title">Open Or Create Wallet</h2>
+        <div class="hint">
+          Enter an existing 12-word mnemonic, generate a new one locally, or import a wallet JSON file produced by the CLI wallet.
+        </div>
+        <div class="stack" style="margin-top: 14px;">
+          <textarea id="mnemonic" placeholder="Enter 12 words or click Generate"></textarea>
+          <div class="row">
+            <button class="primary" id="generateMnemonic">Generate 12 Words</button>
+            <button class="secondary" id="copyMnemonic">Copy Mnemonic</button>
+            <label class="file-label">
+              Load Wallet JSON
+              <input id="walletFile" type="file" accept=".json,application/json">
+            </label>
+          </div>
+          <div class="status" id="walletStatus"></div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="label">Chain State</div>
-        <div class="value">Load a saved local chain JSON to resolve balances in-browser.</div>
+      <div class="card receive">
+        <div class="label">Receive</div>
+        <h2 class="section-title">Wallet Address</h2>
+        <div class="value mono" id="addressMain">Not derived yet</div>
         <div class="row">
-          <label class="file-label">
-            Load Chain JSON
-            <input id="chainFile" type="file" accept=".json,application/json">
-          </label>
+          <button class="secondary" id="copyAddress">Copy Address</button>
+        </div>
+        <div class="hint">
+          Use this address with the CLI faucet or send command while the chain is running locally or exported as a chain JSON file.
         </div>
       </div>
     </section>
@@ -181,18 +225,44 @@
     <section class="grid">
       <div class="card">
         <div class="label">Address</div>
-        <div class="value" id="address">Not derived yet</div>
+        <div class="value mono" id="address">Not derived yet</div>
       </div>
       <div class="card">
         <div class="label">Balance</div>
         <div class="big" id="balance">0</div>
       </div>
       <div class="card">
-        <div class="label">Chain Summary</div>
+        <div class="label">State Summary</div>
         <div class="value">
           <span class="pill">frontier <span id="frontierCount">0</span></span>
           <span class="pill">blocks <span id="blockCount">0</span></span>
           <span class="pill">utxos <span id="utxoCount">0</span></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div class="card">
+        <div class="label">Chain State</div>
+        <h2 class="section-title">Load Local Chain JSON</h2>
+        <div class="hint">
+          Load a saved <code>chain.json</code> file from the CLI to resolve balances and inspect current frontier, confirmed order, and rewards.
+        </div>
+        <div class="row" style="margin-top: 14px;">
+          <label class="file-label">
+            Load Chain JSON
+            <input id="chainFile" type="file" accept=".json,application/json">
+          </label>
+        </div>
+        <div class="status" id="chainStatus"></div>
+      </div>
+
+      <div class="card">
+        <div class="label">About</div>
+        <h2 class="section-title">Static Browser Mode</h2>
+        <div class="hint">
+          This page is static and runs entirely in your browser. It does not submit your mnemonic to a backend.
+          It is designed for GitHub Pages hosting and local wallet inspection, not yet for direct on-page transaction signing.
         </div>
       </div>
     </section>
@@ -271,14 +341,18 @@
       const mnemonic = document.getElementById("mnemonic").value.trim().replace(/\s+/g, " ");
       if (!mnemonic) {
         document.getElementById("address").textContent = "Not derived yet";
+        document.getElementById("addressMain").textContent = "Not derived yet";
         document.getElementById("balance").textContent = "0";
         document.getElementById("walletSnapshot").textContent = "{}";
+        document.getElementById("walletStatus").textContent = "";
         return;
       }
       const address = await sha256Hex(mnemonic);
       currentWallet = { name: "browser-wallet", mnemonic, address };
       document.getElementById("address").textContent = address;
+      document.getElementById("addressMain").textContent = address;
       document.getElementById("walletSnapshot").textContent = JSON.stringify(currentWallet, null, 2);
+      document.getElementById("walletStatus").textContent = "Wallet loaded in browser memory.";
       refreshBalance();
     }
 
@@ -308,6 +382,7 @@
       document.getElementById("blockCount").textContent = String(blocks.length);
       document.getElementById("utxoCount").textContent = String(utxos.length);
       document.getElementById("chainSnapshot").textContent = JSON.stringify(currentChain, null, 2);
+      document.getElementById("chainStatus").textContent = blocks.length ? "Chain JSON loaded." : "";
       refreshBalance();
     }
 
@@ -317,6 +392,17 @@
     }
 
     document.getElementById("generateMnemonic").addEventListener("click", generateMnemonic);
+    document.getElementById("copyMnemonic").addEventListener("click", async () => {
+      const value = document.getElementById("mnemonic").value.trim();
+      if (!value) return;
+      await navigator.clipboard.writeText(value);
+      document.getElementById("walletStatus").textContent = "Mnemonic copied.";
+    });
+    document.getElementById("copyAddress").addEventListener("click", async () => {
+      if (!currentWallet.address) return;
+      await navigator.clipboard.writeText(currentWallet.address);
+      document.getElementById("walletStatus").textContent = "Address copied.";
+    });
     document.getElementById("mnemonic").addEventListener("input", () => {
       refreshWallet();
     });
@@ -328,6 +414,7 @@
       const mnemonic = wallet.mnemonic || wallet.seed || "";
       document.getElementById("mnemonic").value = mnemonic;
       await refreshWallet();
+      document.getElementById("walletStatus").textContent = "Wallet JSON loaded.";
     });
 
     document.getElementById("chainFile").addEventListener("change", async (event) => {

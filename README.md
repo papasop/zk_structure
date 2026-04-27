@@ -212,6 +212,20 @@ Once GitHub Pages is enabled for the repository `docs/` directory, the wallet pa
 
 - `https://<user>.github.io/<repo>/wallet/`
 
+To enable it on GitHub:
+
+1. Open the repository `Settings`
+2. Open `Pages`
+3. Under `Build and deployment`, choose:
+   - `Source`: `Deploy from a branch`
+   - `Branch`: `main`
+   - `Folder`: `/docs`
+4. Save and wait for the Pages deployment to finish
+
+For this repository shape, the published wallet URL should look like:
+
+- `https://papasop.github.io/zk_structure/wallet/`
+
 ## PoCT Tokenomics
 
 The repository now defines a first-stage issuance direction for PoCT:
