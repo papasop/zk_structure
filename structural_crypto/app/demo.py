@@ -36,7 +36,9 @@ def run_demo() -> dict:
         "block_index": block.index,
         "block_hash": block.block_hash,
         "balances": chain.balances(),
+        "frontier": list(chain.frontier),
         "trajectories": chain.trajectory_summary(),
         "valid": chain.validate_chain(),
+        "virtual_order": chain.virtual_order(),
         "summary": chain.chain_summary(),
     }

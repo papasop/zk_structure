@@ -264,6 +264,57 @@ class BlockchainTests(unittest.TestCase):
         self.assertIn("parents", summary[1])
         self.assertIsInstance(summary[1]["parents"], list)
 
+    def test_virtual_order_supports_parallel_blocks(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+        )
+        a = Wallet("a", "a-seed")
+        b = Wallet("b", "b-seed")
+
+        a_state = chain._identity_state(a.address)
+        a_state.phase = "mature"
+        a_state.compliant_txs = 30
+        a_state.average_delta = 0.1
+
+        b_state = chain._identity_state(b.address)
+        b_state.phase = "mature"
+        b_state.compliant_txs = 20
+        b_state.average_delta = 0.3
+
+        parent = chain.blocks[-1].block_hash
+        block_a = chain.build_candidate_block(a.address, transactions=[], parents=[parent])
+        block_b = chain.build_candidate_block(b.address, transactions=[], parents=[parent])
+        chain.accept_block(block_a)
+        chain.accept_block(block_b)
+
+        order = chain.virtual_order()
+        self.assertEqual(order[0], parent)
+        self.assertLess(order.index(block_a.block_hash), order.index(block_b.block_hash))
+
+    def test_frontier_tracks_parallel_children(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+        )
+        a = Wallet("a", "a-seed")
+        b = Wallet("b", "b-seed")
+
+        chain._identity_state(a.address).phase = "mature"
+        chain._identity_state(b.address).phase = "mature"
+
+        parent = chain.blocks[-1].block_hash
+        block_a = chain.build_candidate_block(a.address, transactions=[], parents=[parent])
+        block_b = chain.build_candidate_block(b.address, transactions=[], parents=[parent])
+        chain.accept_block(block_a)
+        chain.accept_block(block_b)
+
+        self.assertIn(block_a.block_hash, chain.frontier)
+        self.assertIn(block_b.block_hash, chain.frontier)
+        self.assertNotIn(parent, chain.frontier)
+
 
 if __name__ == "__main__":
     unittest.main()

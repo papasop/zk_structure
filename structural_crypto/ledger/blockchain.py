@@ -274,6 +274,27 @@ class Blockchain:
         self.mempool.clear()
         return block
 
+    def build_candidate_block(
+        self,
+        producer_id: str,
+        transactions: Optional[List[Transaction]] = None,
+        parents: Optional[List[str]] = None,
+    ) -> Block:
+        if not self.producer_is_eligible(producer_id):
+            raise ValidationError("producer is not eligible to build blocks")
+        block_txs = list(transactions) if transactions is not None else []
+        return self._build_block(block_txs, producer_id, parents=parents)
+
+    def accept_block(self, block: Block) -> None:
+        self._validate_block_structure(block)
+        self.blocks.append(block)
+        self.block_by_hash[block.block_hash] = block
+        for parent in block.parents:
+            if parent in self.frontier:
+                self.frontier.remove(parent)
+        if block.block_hash not in self.frontier:
+            self.frontier.append(block.block_hash)
+
     def validate_chain(self) -> bool:
         temp_utxos: Dict[Tuple[str, int], TxOutput] = {}
         temp_sender_states: Dict[str, SenderTrajectoryState] = {}
@@ -359,6 +380,18 @@ class Blockchain:
             for block in self.blocks
         ]
 
+    def dag_summary(self) -> List[dict]:
+        return [
+            {
+                "hash": block.block_hash,
+                "parents": block.parents,
+                "producer_id": block.producer_id,
+                "producer_phase": block.producer_phase,
+                "producer_ordering_score": block.producer_ordering_score,
+            }
+            for block in self.blocks
+        ]
+
     def trajectory_summary(self) -> Dict[str, dict]:
         return {
             sender: {
@@ -371,6 +404,27 @@ class Blockchain:
             }
             for sender, state in self.sender_states.items()
         }
+
+    def virtual_order(self) -> List[str]:
+        indegree: Dict[str, int] = {block.block_hash: 0 for block in self.blocks}
+        children: Dict[str, List[str]] = {block.block_hash: [] for block in self.blocks}
+        for block in self.blocks:
+            for parent in block.parents:
+                if parent in indegree:
+                    indegree[block.block_hash] += 1
+                    children[parent].append(block.block_hash)
+
+        ready = [block.block_hash for block in self.blocks if indegree[block.block_hash] == 0]
+        ordered: List[str] = []
+        while ready:
+            ready.sort(key=self._virtual_order_key)
+            current = ready.pop(0)
+            ordered.append(current)
+            for child in children[current]:
+                indegree[child] -= 1
+                if indegree[child] == 0:
+                    ready.append(child)
+        return ordered
 
     def producer_is_eligible(self, producer: str) -> bool:
         state = self._identity_state(producer)
@@ -453,8 +507,13 @@ class Blockchain:
             timestamp=timestamp,
         )
 
-    def _build_block(self, transactions: List[Transaction], producer_id: str) -> Block:
-        parents = self._select_block_parents(producer_id)
+    def _build_block(
+        self,
+        transactions: List[Transaction],
+        producer_id: str,
+        parents: Optional[List[str]] = None,
+    ) -> Block:
+        parents = parents or self._select_block_parents(producer_id)
         index = len(self.blocks)
         timestamp = int(time.time())
         merkle_root = self._merkle_root(transactions)
@@ -500,14 +559,17 @@ class Blockchain:
             nonce += 1
 
     def _apply_block(self, block: Block) -> None:
+        self._validate_block_structure(block)
         for tx in self.mempool:
             self._apply_transaction(tx)
         self._apply_transaction(block.transactions[-1])
         self.blocks.append(block)
         self.block_by_hash[block.block_hash] = block
-        if block.prev_hash in self.frontier:
-            self.frontier.remove(block.prev_hash)
-        self.frontier.append(block.block_hash)
+        for parent in block.parents:
+            if parent in self.frontier:
+                self.frontier.remove(parent)
+        if block.block_hash not in self.frontier:
+            self.frontier.append(block.block_hash)
 
     def _apply_transaction(self, tx: Transaction) -> None:
         for tx_input in tx.inputs:
@@ -713,6 +775,25 @@ class Blockchain:
         extra_parents = sorted(parent for parent in self.frontier if parent != main_parent)
         # Keep the first version conservative: one main parent plus a small merge set.
         return [main_parent, *extra_parents[:2]]
+
+    def _validate_block_structure(self, block: Block) -> None:
+        if block.index == 0:
+            if block.parents:
+                raise ValidationError("genesis block must not have parents")
+            return
+        if not block.parents:
+            raise ValidationError("non-genesis block must reference at least one parent")
+        for parent in block.parents:
+            if parent not in self.block_by_hash:
+                raise ValidationError("block references unknown parent")
+
+    def _virtual_order_key(self, block_hash: str) -> tuple:
+        block = self.block_by_hash[block_hash]
+        return (
+            *self.producer_priority(block.producer_id, block.timestamp),
+            len(block.parents),
+            block.block_hash,
+        )
 
     @staticmethod
     def _aggregate_delta(transactions: List[Transaction]) -> float:
