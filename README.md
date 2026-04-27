@@ -174,6 +174,26 @@ See:
 
 - [docs/POCT_L1_BATCH_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_L1_BATCH_SPEC.md)
 
+## Next-Phase Specs
+
+The repository now also includes first-pass specifications and code skeletons for:
+
+- multi-node PoCT networking
+- zk backend integration
+- stress testing
+- security review preparation
+- deterministic state transition review
+- L1 execution consumption
+
+See:
+
+- [docs/POCT_NODE_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_NODE_SPEC.md)
+- [docs/POCT_ZK_BACKEND_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_ZK_BACKEND_SPEC.md)
+- [docs/POCT_STRESS_TEST_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_STRESS_TEST_SPEC.md)
+- [docs/POCT_SECURITY_AUDIT_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_SECURITY_AUDIT_SPEC.md)
+- [docs/POCT_STATE_TRANSITION_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_STATE_TRANSITION_SPEC.md)
+- [docs/POCT_L1_EXECUTION_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_L1_EXECUTION_SPEC.md)
+
 ## PoCT Persistence
 
 The current prototype now includes:

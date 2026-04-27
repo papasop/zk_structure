@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from structural_crypto.crypto.policy import PolicyCommitment
+from structural_crypto.l1 import SimpleL1Executor
+from structural_crypto.ledger import Blockchain
+from structural_crypto.node import Wallet
+from structural_crypto.node.node import PoCTNode
+from structural_crypto.node.p2p import GossipEnvelope, PeerInfo
+from structural_crypto.node.rpc import RPCRequest
+from structural_crypto.testing.loadgen import AgentSpec, LoadGenerator
+from structural_crypto.zk import MockZKBackend
+
+
+class NodeL1ZKTests(unittest.TestCase):
+    def test_node_sync_summary_and_rpc(self) -> None:
+        node = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        peer = PeerInfo(node_id="node-b", endpoint="127.0.0.1:9001")
+        node.add_peer(peer)
+
+        summary = node.sync_summary()
+        self.assertEqual(summary["node_id"], "node-a")
+        response = node.handle_rpc(RPCRequest(method="get_frontier"))
+        self.assertTrue(response.ok)
+        self.assertIn("frontier", response.result)
+
+    def test_node_submit_transaction_emits_gossip(self) -> None:
+        chain = Blockchain(difficulty=1, producer_reward=5, allow_new_producers=True)
+        node = PoCTNode("node-a", chain=chain)
+        alice = Wallet("alice", "alice-seed")
+        bob = Wallet("bob", "bob-seed")
+        chain.faucet(alice.address, 10)
+        policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=5, allowed_recipients=[bob.address])
+        tx = chain.build_transaction(alice.key, [(bob.address, 5)], policy, timestamp=100)
+
+        node.submit_transaction(tx, signer_seed=alice.seed)
+
+        self.assertEqual(node.outbox[-1].kind, "transaction")
+        self.assertEqual(node.outbox[-1].payload["txid"], tx.txid)
+
+    def test_node_save_and_load(self) -> None:
+        node = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = node.save(Path(tmpdir) / "node.json")
+            restored = PoCTNode.load("node-a", path)
+        self.assertEqual(restored.chain.chain_summary(), node.chain.chain_summary())
+
+    def test_gossip_envelope_forward_decrements_ttl(self) -> None:
+        envelope = GossipEnvelope(kind="block", origin="node-a", payload={"block_hash": "abc"}, ttl=3)
+        forwarded = envelope.forward("node-b")
+        self.assertEqual(forwarded.ttl, 2)
+        self.assertEqual(forwarded.metadata["forwarded_by"], "node-b")
+
+    def test_mock_zk_backend_round_trip(self) -> None:
+        backend = MockZKBackend()
+        proof = backend.prove(
+            circuit_id="trajectory-validity",
+            witness={"secret": 1},
+            public_inputs={"txid": "abc"},
+        )
+        self.assertTrue(backend.verify(proof))
+
+    def test_simple_l1_executor_applies_batch(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            producer_reward=5,
+            allow_new_producers=True,
+            confirmation_threshold=0.5,
+        )
+        alice = Wallet("alice", "alice-seed")
+        bob = Wallet("bob", "bob-seed")
+        prod_a = Wallet("prod-a", "prod-a-seed")
+        prod_b = Wallet("prod-b", "prod-b-seed")
+        chain.faucet(alice.address, 20)
+        policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=5, allowed_recipients=[bob.address])
+
+        chain._identity_state(prod_a.address).phase = "mature"
+        chain._identity_state(prod_a.address).compliant_txs = 30
+        chain._identity_state(prod_b.address).phase = "mature"
+        chain._identity_state(prod_b.address).compliant_txs = 30
+
+        tx = chain.build_transaction(alice.key, [(bob.address, 5)], policy, timestamp=100)
+        parent = chain.blocks[-1].block_hash
+        block_a = chain.build_candidate_block(prod_a.address, transactions=[tx], parents=[parent])
+        chain.accept_block(block_a)
+        block_b = chain.build_candidate_block(prod_b.address, transactions=[], parents=[block_a.block_hash])
+        chain.accept_block(block_b)
+
+        executor = SimpleL1Executor()
+        checkpoint = executor.apply_batch(chain.confirmed_l1_batch())
+        self.assertEqual(executor.accounts[bob.address], 5)
+        self.assertEqual(checkpoint.tx_count, len(chain.confirmed_l1_batch()["transactions"]))
+
+    def test_load_generator_builds_transactions(self) -> None:
+        chain = Blockchain(difficulty=1, producer_reward=5, allow_new_producers=True)
+        alice = Wallet("alice", "alice-seed")
+        bob = Wallet("bob", "bob-seed")
+        chain.faucet(alice.address, 10)
+        loadgen = LoadGenerator(chain)
+
+        txs = loadgen.build_transactions(
+            [
+                AgentSpec(wallet=alice, recipients=[bob.address], amount=3),
+            ],
+            timestamp=100,
+        )
+
+        self.assertEqual(len(txs), 1)
+        self.assertEqual(txs[0].outputs[0].recipient, bob.address)
