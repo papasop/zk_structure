@@ -37,6 +37,7 @@ def run_demo() -> dict:
         "block_hash": block.block_hash,
         "balances": chain.balances(),
         "confirmed_order": chain.confirmed_order(),
+        "confirmed_rewards": chain.confirmed_reward_totals(),
         "frontier": list(chain.frontier),
         "trajectories": chain.trajectory_summary(),
         "valid": chain.validate_chain(),

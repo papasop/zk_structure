@@ -361,6 +361,55 @@ class BlockchainTests(unittest.TestCase):
         self.assertTrue(chain.is_confirmed(block_a.block_hash))
         self.assertIn(block_a.block_hash, chain.confirmed_order())
 
+    def test_unconfirmed_block_has_zero_reward(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+            confirmation_threshold=1.0,
+        )
+        a = Wallet("a", "a-seed")
+        a_state = chain._identity_state(a.address)
+        a_state.phase = "mature"
+        a_state.compliant_txs = 30
+        a_state.average_delta = 0.1
+
+        parent = chain.blocks[-1].block_hash
+        block = chain.build_candidate_block(a.address, transactions=[], parents=[parent])
+        chain.accept_block(block)
+
+        self.assertEqual(chain.confirmed_reward_for_block(block.block_hash), 0.0)
+
+    def test_confirmed_reward_totals_credit_producer(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+            confirmation_threshold=0.5,
+        )
+        a = Wallet("a", "a-seed")
+        b = Wallet("b", "b-seed")
+
+        a_state = chain._identity_state(a.address)
+        a_state.phase = "mature"
+        a_state.compliant_txs = 30
+        a_state.average_delta = 0.1
+
+        b_state = chain._identity_state(b.address)
+        b_state.phase = "mature"
+        b_state.compliant_txs = 30
+        b_state.average_delta = 0.1
+
+        parent = chain.blocks[-1].block_hash
+        block_a = chain.build_candidate_block(a.address, transactions=[], parents=[parent])
+        chain.accept_block(block_a)
+        block_b = chain.build_candidate_block(b.address, transactions=[], parents=[block_a.block_hash])
+        chain.accept_block(block_b)
+
+        totals = chain.confirmed_reward_totals()
+        self.assertIn(a.address, totals)
+        self.assertGreater(totals[a.address], 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

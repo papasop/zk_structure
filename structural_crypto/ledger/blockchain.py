@@ -396,6 +396,7 @@ class Blockchain:
                 "producer_ordering_score": block.producer_ordering_score,
                 "confirmation_score": self.confirmation_score(block.block_hash),
                 "confirmed": self.is_confirmed(block.block_hash),
+                "confirmed_reward": self.confirmed_reward_for_block(block.block_hash),
             }
             for block in self.blocks
         ]
@@ -457,6 +458,27 @@ class Blockchain:
 
     def confirmed_order(self) -> List[str]:
         return [block_hash for block_hash in self.virtual_order() if self.is_confirmed(block_hash)]
+
+    def confirmed_reward_for_block(self, block_hash: str) -> float:
+        if block_hash not in self.block_by_hash:
+            raise ValidationError("unknown block for reward accounting")
+        block = self.block_by_hash[block_hash]
+        if block.index == 0 or not self.is_confirmed(block_hash):
+            return 0.0
+        if block.producer_id == "GENESIS":
+            return 0.0
+        state = self._identity_state(block.producer_id)
+        return self.mining_reward * self.cold_start.reward_share(state)
+
+    def confirmed_reward_totals(self) -> Dict[str, float]:
+        totals: Dict[str, float] = {}
+        for block_hash in self.confirmed_order():
+            block = self.block_by_hash[block_hash]
+            reward = self.confirmed_reward_for_block(block_hash)
+            if reward <= 0:
+                continue
+            totals[block.producer_id] = totals.get(block.producer_id, 0.0) + reward
+        return totals
 
     def producer_is_eligible(self, producer: str) -> bool:
         state = self._identity_state(producer)
