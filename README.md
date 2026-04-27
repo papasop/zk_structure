@@ -9,6 +9,7 @@ The repository now separates three layers:
 - `structural_crypto.crypto`: structure functions, policy commitments, and structure-bound signing.
 - `structural_crypto.ledger`: transactions, UTXOs, blocks, proof-of-work mining, and chain validation.
 - `structural_crypto.app`: a tiny CLI and an end-to-end demo.
+- `structural_crypto.consensus`: PoCT cold-start and identity maturation helpers.
 
 This first implementation is intentionally small:
 
@@ -64,3 +65,17 @@ That makes the first blockchain version align with the original research directi
 - add persistent chain storage
 - introduce per-identity history and rate-limit rules
 - evolve from a linear chain to DAG ordering if the research path still points there
+
+## PoCT Cold Start
+
+This repository now includes a first PoCT cold-start model:
+
+- open entry
+- low initial ordering power
+- trajectory-based maturation
+- optional capped external credential boost
+
+See:
+
+- [docs/POCT_COLD_START.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_COLD_START.md)
+- [structural_crypto/consensus/cold_start.py](/Users/bai/Documents/New%20project/zk_structure/structural_crypto/consensus/cold_start.py)
