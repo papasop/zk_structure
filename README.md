@@ -202,6 +202,16 @@ The prototype now also includes:
 - transaction gossip import between local nodes
 - file-spool local multi-process node testing
 
+## GitHub Pages Wallet
+
+The repository now also includes a static browser wallet under:
+
+- `docs/wallet/index.html`
+
+Once GitHub Pages is enabled for the repository `docs/` directory, the wallet page can be hosted at:
+
+- `https://<user>.github.io/<repo>/wallet/`
+
 ## PoCT Tokenomics
 
 The repository now defines a first-stage issuance direction for PoCT:

@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PoCT Wallet</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --card: #fffaf3;
+      --ink: #1f2822;
+      --muted: #647066;
+      --line: #d8cfbf;
+      --accent: #1f6b5b;
+      --accent-soft: #ecf6f2;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, "Iowan Old Style", serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top, #fffdf8 0%, #f7f3ea 35%, var(--bg) 100%);
+    }
+    .wrap {
+      max-width: 1120px;
+      margin: 32px auto 64px;
+      padding: 0 18px;
+    }
+    .hero, .card {
+      border: 1px solid var(--line);
+      background: var(--card);
+      border-radius: 18px;
+      box-shadow: 0 18px 45px rgba(36, 48, 39, 0.08);
+    }
+    .hero {
+      padding: 24px 28px;
+      background:
+        linear-gradient(135deg, rgba(255,250,243,0.98), rgba(238,247,243,0.98));
+    }
+    .eyebrow {
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-size: 12px;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 44px;
+      line-height: 1.05;
+    }
+    .sub {
+      margin-top: 10px;
+      color: var(--muted);
+      max-width: 760px;
+      font-size: 16px;
+      line-height: 1.45;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .card { padding: 18px; }
+    .label {
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .value {
+      font-size: 15px;
+      line-height: 1.5;
+      word-break: break-word;
+    }
+    .big {
+      font-size: 34px;
+      color: var(--accent);
+      line-height: 1;
+    }
+    textarea, input[type="text"], input[type="number"] {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #fffdf9;
+      color: var(--ink);
+      font: inherit;
+    }
+    textarea { min-height: 88px; resize: vertical; }
+    .row {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    button, .file-label {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 10px 14px;
+      font: inherit;
+      cursor: pointer;
+      background: white;
+      color: var(--ink);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+    button.primary {
+      background: var(--accent);
+      color: white;
+      border-color: var(--accent);
+    }
+    .file-label input { display: none; }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 13px;
+      line-height: 1.45;
+      background: #fbf8f1;
+      padding: 12px;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+    }
+    .pill {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-size: 13px;
+      margin-right: 8px;
+      margin-bottom: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <div class="eyebrow">PoCT Wallet</div>
+      <h1>GitHub Pages Wallet</h1>
+      <div class="sub">
+        A static browser wallet for the current PoCT prototype. It derives an address from a 12-word mnemonic in-browser,
+        can import a local wallet JSON file, and can read a local chain state JSON file to display the current balance.
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <div class="label">Mnemonic</div>
+        <textarea id="mnemonic" placeholder="Enter 12 words or click Generate"></textarea>
+        <div class="row">
+          <button class="primary" id="generateMnemonic">Generate 12 Words</button>
+          <label class="file-label">
+            Load Wallet JSON
+            <input id="walletFile" type="file" accept=".json,application/json">
+          </label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="label">Chain State</div>
+        <div class="value">Load a saved local chain JSON to resolve balances in-browser.</div>
+        <div class="row">
+          <label class="file-label">
+            Load Chain JSON
+            <input id="chainFile" type="file" accept=".json,application/json">
+          </label>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <div class="label">Address</div>
+        <div class="value" id="address">Not derived yet</div>
+      </div>
+      <div class="card">
+        <div class="label">Balance</div>
+        <div class="big" id="balance">0</div>
+      </div>
+      <div class="card">
+        <div class="label">Chain Summary</div>
+        <div class="value">
+          <span class="pill">frontier <span id="frontierCount">0</span></span>
+          <span class="pill">blocks <span id="blockCount">0</span></span>
+          <span class="pill">utxos <span id="utxoCount">0</span></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <div class="label">Wallet Snapshot</div>
+        <pre id="walletSnapshot">{}</pre>
+      </div>
+      <div class="card">
+        <div class="label">Chain Snapshot</div>
+        <pre id="chainSnapshot">{}</pre>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const WORDS = [
+      "able","about","absorb","access","across","action","adapt","admit",
+      "agent","agree","alert","alpha","anchor","ancient","angle","apple",
+      "arena","artist","aspect","atom","autumn","balance","bamboo","basic",
+      "beacon","before","begin","belief","below","bird","blade","bless",
+      "bloom","blue","border","brave","breeze","bridge","bright","brother",
+      "cabin","calm","camera","candle","canvas","captain","carbon","carry",
+      "castle","casual","center","chance","change","chapter","circle","citizen",
+      "clarity","classic","cloud","coast","cobalt","comfort","common","copper",
+      "corner","cradle","craft","crystal","cycle","dance","dawn","decent",
+      "deep","delta","desert","detail","diamond","distant","doctor","dream",
+      "drift","earth","echo","ember","energy","engine","equal","essence",
+      "evening","ever","exact","exile","fabric","falcon","family","fancy",
+      "field","filter","final","flame","flower","focus","forest","fortune",
+      "frame","future","galaxy","garden","gentle","globe","glory","golden",
+      "grace","grain","gravity","green","guide","harbor","harmony","hazel",
+      "hero","hidden","honor","horizon","humble","ice","idea","impact",
+      "indigo","island","jewel","journey","joy","juniper","kernel","kingdom",
+      "ladder","lake","lantern","legend","lemon","level","liberty","light",
+      "linen","lively","logic","lotus","lunar","magic","maple","marble",
+      "meadow","melody","memory","merit","midnight","mirror","modern","moment",
+      "mountain","music","native","nature","navy","noble","north","novel",
+      "oasis","ocean","olive","omega","orbit","origin","panel","paper",
+      "parent","path","pearl","pepper","phoenix","piano","planet","plaza",
+      "poem","polar","prairie","prime","prism","public","pulse","quality",
+      "quantum","quiet","radar","rain","random","rapid","reason","record",
+      "reef","relief","ribbon","river","rocket","royal","sacred","saddle",
+      "sail","sample","scale","science","season","shadow","signal","silver",
+      "simple","skill","smile","solar","solid","spirit","spring","stable",
+      "star","stone","story","sunset","swift","talent","temple","theory",
+      "thrive","timber","titan","today","token","torch","travel","trust",
+      "unity","urban","valid","valley","velvet","victory","violet","vision",
+      "vital","voyage","warm","water","whisper","window","wisdom","wonder",
+      "world","yonder","young","zephyr"
+    ];
+
+    let currentWallet = {};
+    let currentChain = {};
+
+    async function sha256Hex(text) {
+      const encoded = new TextEncoder().encode(text);
+      const digest = await crypto.subtle.digest("SHA-256", encoded);
+      return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    function randomWord() {
+      const bytes = new Uint32Array(1);
+      crypto.getRandomValues(bytes);
+      return WORDS[bytes[0] % WORDS.length];
+    }
+
+    function generateMnemonic() {
+      const phrase = Array.from({ length: 12 }, () => randomWord()).join(" ");
+      document.getElementById("mnemonic").value = phrase;
+      refreshWallet();
+    }
+
+    async function refreshWallet() {
+      const mnemonic = document.getElementById("mnemonic").value.trim().replace(/\s+/g, " ");
+      if (!mnemonic) {
+        document.getElementById("address").textContent = "Not derived yet";
+        document.getElementById("balance").textContent = "0";
+        document.getElementById("walletSnapshot").textContent = "{}";
+        return;
+      }
+      const address = await sha256Hex(mnemonic);
+      currentWallet = { name: "browser-wallet", mnemonic, address };
+      document.getElementById("address").textContent = address;
+      document.getElementById("walletSnapshot").textContent = JSON.stringify(currentWallet, null, 2);
+      refreshBalance();
+    }
+
+    function computeBalance(chain, address) {
+      const utxos = Array.isArray(chain.utxos) ? chain.utxos : [];
+      return utxos.reduce((sum, entry) => {
+        const output = entry.output || {};
+        return output.recipient === address ? sum + Number(output.amount || 0) : sum;
+      }, 0);
+    }
+
+    function refreshBalance() {
+      const address = currentWallet.address;
+      if (!address) {
+        document.getElementById("balance").textContent = "0";
+        return;
+      }
+      const balance = computeBalance(currentChain, address);
+      document.getElementById("balance").textContent = String(balance);
+    }
+
+    function refreshChainSummary() {
+      const frontier = Array.isArray(currentChain.frontier) ? currentChain.frontier : [];
+      const blocks = Array.isArray(currentChain.blocks) ? currentChain.blocks : [];
+      const utxos = Array.isArray(currentChain.utxos) ? currentChain.utxos : [];
+      document.getElementById("frontierCount").textContent = String(frontier.length);
+      document.getElementById("blockCount").textContent = String(blocks.length);
+      document.getElementById("utxoCount").textContent = String(utxos.length);
+      document.getElementById("chainSnapshot").textContent = JSON.stringify(currentChain, null, 2);
+      refreshBalance();
+    }
+
+    async function loadJsonFile(file) {
+      const text = await file.text();
+      return JSON.parse(text);
+    }
+
+    document.getElementById("generateMnemonic").addEventListener("click", generateMnemonic);
+    document.getElementById("mnemonic").addEventListener("input", () => {
+      refreshWallet();
+    });
+
+    document.getElementById("walletFile").addEventListener("change", async (event) => {
+      const [file] = event.target.files;
+      if (!file) return;
+      const wallet = await loadJsonFile(file);
+      const mnemonic = wallet.mnemonic || wallet.seed || "";
+      document.getElementById("mnemonic").value = mnemonic;
+      await refreshWallet();
+    });
+
+    document.getElementById("chainFile").addEventListener("change", async (event) => {
+      const [file] = event.target.files;
+      if (!file) return;
+      currentChain = await loadJsonFile(file);
+      refreshChainSummary();
+    });
+
+    refreshWallet();
+    refreshChainSummary();
+  </script>
+</body>
+</html>
