@@ -116,6 +116,33 @@ See:
 
 - [docs/POCT_IDENTITY_CONTROL_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_IDENTITY_CONTROL_SPEC.md)
 
+## PoCT Identity Action Layer
+
+The repository now also defines the concrete action grammar for the layered identity model:
+
+- `identity_id + action_type + action_key`
+- ordinary transfer authority
+- spend-key rotation
+- delayed threshold recovery
+- deterministic validation order
+
+See:
+
+- [docs/POCT_IDENTITY_ACTION_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_IDENTITY_ACTION_SPEC.md)
+
+## PoCT Identity State Layer
+
+The repository now also defines the target ledger-side state objects for the layered identity model:
+
+- durable `IdentityState`
+- active and retired key authorization state
+- explicit `RecoveryPolicyState`
+- explicit `PendingRecoveryState`
+
+See:
+
+- [docs/POCT_IDENTITY_STATE_OBJECT_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_IDENTITY_STATE_OBJECT_SPEC.md)
+
 ## PoCT Producer Model
 
 The current recommended producer path is Model A:
@@ -195,6 +222,8 @@ The repository now also includes first-pass specifications and code skeletons fo
 - multi-node PoCT networking
 - sync and convergence across nodes
 - identity control and key recovery
+- identity action and recovery state transitions
+- identity state object migration
 - zk backend integration
 - stress testing
 - security review preparation
@@ -206,6 +235,8 @@ See:
 - [docs/POCT_NODE_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_NODE_SPEC.md)
 - [docs/POCT_SYNC_CONVERGENCE_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_SYNC_CONVERGENCE_SPEC.md)
 - [docs/POCT_IDENTITY_CONTROL_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_IDENTITY_CONTROL_SPEC.md)
+- [docs/POCT_IDENTITY_ACTION_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_IDENTITY_ACTION_SPEC.md)
+- [docs/POCT_IDENTITY_STATE_OBJECT_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_IDENTITY_STATE_OBJECT_SPEC.md)
 - [docs/POCT_ZK_BACKEND_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_ZK_BACKEND_SPEC.md)
 - [docs/POCT_STRESS_TEST_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_STRESS_TEST_SPEC.md)
 - [docs/POCT_SECURITY_AUDIT_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_SECURITY_AUDIT_SPEC.md)

@@ -7,25 +7,35 @@ Define the deterministic state transition layer that all nodes and future audits
 ## State Domains
 
 - UTXO set
-- sender trajectory state
+- identity trajectory state
 - identity cold-start state
+- identity key authorization state
+- pending recovery state
 - DAG block set
 - frontier
 
 ## Transition Order
 
-1. validate transaction
-2. validate trajectory rules
-3. validate producer eligibility
-4. accept block
-5. resolve virtual conflicts
-6. compute confirmation
-7. derive confirmed rewards
-8. export confirmed L1 feed
+1. validate action integrity
+2. validate identity authority
+3. validate trajectory rules
+4. validate producer eligibility
+5. apply accepted state transition
+6. accept block
+7. resolve virtual conflicts
+8. compute confirmation
+9. derive confirmed rewards
+10. export confirmed L1 feed
 
 ## Required Invariants
 
 - no accepted spend without owned input
-- no accepted sender sequence duplication in resolved order
+- no accepted identity sequence duplication in resolved order
+- no unauthorized key rotation
+- no recovery finalization before delay expiry
 - no confirmed reward without confirmation
 - persistence round-trip preserves confirmed order
+
+See:
+
+- [POCT_IDENTITY_ACTION_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_IDENTITY_ACTION_SPEC.md)

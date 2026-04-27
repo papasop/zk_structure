@@ -62,6 +62,10 @@ It should contain at least:
 - `created_at`
 - `updated_at`
 
+The concrete breakdown of those fields into durable ledger objects is defined in:
+
+- [POCT_IDENTITY_STATE_OBJECT_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_IDENTITY_STATE_OBJECT_SPEC.md)
+
 ## Why Identity Should Not Be A Single Key
 
 If PoCT introduces a dedicated `identity private key`, the system simply moves the same compromise risk one layer higher.
