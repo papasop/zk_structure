@@ -202,6 +202,17 @@ The prototype now also includes:
 - transaction gossip import between local nodes
 - file-spool local multi-process node testing
 
+## PoCT Tokenomics
+
+The repository now defines a first-stage issuance direction for PoCT:
+
+- declining emissions
+- fixed low tail emission
+
+See:
+
+- [docs/POCT_TOKENOMICS_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_TOKENOMICS_SPEC.md)
+
 ## PoCT Persistence
 
 The current prototype now includes:
