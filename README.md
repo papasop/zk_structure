@@ -208,6 +208,14 @@ The repository now also includes a static browser wallet under:
 
 - `docs/wallet/index.html`
 
+The current Pages wallet supports:
+
+- 12-word wallet generation/import
+- local chain JSON loading
+- balance display
+- transaction draft generation
+- wallet-scoped transaction history
+
 Once GitHub Pages is enabled for the repository `docs/` directory, the wallet page can be hosted at:
 
 - `https://<user>.github.io/<repo>/wallet/`

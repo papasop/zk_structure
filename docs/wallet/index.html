@@ -167,6 +167,29 @@
       color: var(--accent);
       font-size: 13px;
     }
+    .tx-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .tx-item {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fbf8f1;
+      padding: 12px;
+    }
+    .tx-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .empty {
+      color: var(--muted);
+      font-size: 14px;
+    }
     .receive {
       background: linear-gradient(180deg, #fffdf9, #f4fbf8);
     }
@@ -267,6 +290,37 @@
       </div>
     </section>
 
+    <section class="grid-two">
+      <div class="card">
+        <div class="label">Send</div>
+        <h2 class="section-title">Create Transaction Draft</h2>
+        <div class="hint">
+          This static wallet page does not broadcast directly yet. It builds a local transaction request payload you can copy into your node workflow.
+        </div>
+        <div class="stack" style="margin-top: 14px;">
+          <input id="sendTo" type="text" placeholder="Recipient address">
+          <input id="sendAmount" type="text" placeholder="Amount">
+          <div class="row">
+            <button class="primary" id="buildDraft">Build Draft</button>
+            <button class="secondary" id="copyDraft">Copy Draft JSON</button>
+          </div>
+          <div class="status" id="draftStatus"></div>
+          <pre id="draftSnapshot">{}</pre>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="label">History</div>
+        <h2 class="section-title">Transaction History</h2>
+        <div class="hint">
+          Loaded from the current chain JSON and filtered for this wallet address.
+        </div>
+        <div id="historyList" class="tx-list" style="margin-top: 14px;">
+          <div class="empty">No chain loaded yet.</div>
+        </div>
+      </div>
+    </section>
+
     <section class="grid">
       <div class="card">
         <div class="label">Wallet Snapshot</div>
@@ -318,6 +372,7 @@
 
     let currentWallet = {};
     let currentChain = {};
+    let currentDraft = {};
 
     async function sha256Hex(text) {
       const encoded = new TextEncoder().encode(text);
@@ -384,6 +439,88 @@
       document.getElementById("chainSnapshot").textContent = JSON.stringify(currentChain, null, 2);
       document.getElementById("chainStatus").textContent = blocks.length ? "Chain JSON loaded." : "";
       refreshBalance();
+      refreshHistory();
+    }
+
+    function historyEntries(chain, address) {
+      const blocks = Array.isArray(chain.blocks) ? chain.blocks : [];
+      const entries = [];
+      for (const block of blocks) {
+        const txs = Array.isArray(block.transactions) ? block.transactions : [];
+        for (const tx of txs) {
+          const outputs = Array.isArray(tx.outputs) ? tx.outputs : [];
+          const sent = tx.sender === address;
+          const receivedAmount = outputs
+            .filter((output) => output.recipient === address)
+            .reduce((sum, output) => sum + Number(output.amount || 0), 0);
+          if (!sent && receivedAmount === 0) continue;
+          const sentAmount = outputs
+            .filter((output) => output.recipient !== address)
+            .reduce((sum, output) => sum + Number(output.amount || 0), 0);
+          entries.push({
+            txid: tx.txid,
+            blockIndex: block.index,
+            direction: sent ? "sent" : "received",
+            amount: sent ? sentAmount : receivedAmount,
+            sequence: tx.sequence,
+            epoch: tx.epoch,
+            counterparty: sent
+              ? outputs.filter((output) => output.recipient !== address).map((output) => output.recipient).join(", ")
+              : tx.sender,
+          });
+        }
+      }
+      return entries.reverse();
+    }
+
+    function refreshHistory() {
+      const list = document.getElementById("historyList");
+      const address = currentWallet.address;
+      if (!address || !currentChain.blocks) {
+        list.innerHTML = '<div class="empty">No chain loaded yet.</div>';
+        return;
+      }
+      const entries = historyEntries(currentChain, address);
+      if (!entries.length) {
+        list.innerHTML = '<div class="empty">No transactions for this wallet in the loaded chain.</div>';
+        return;
+      }
+      list.innerHTML = entries.map((entry) => `
+        <div class="tx-item">
+          <div><strong>${entry.direction === "sent" ? "Sent" : "Received"}</strong> ${entry.amount}</div>
+          <div class="tx-meta">
+            <span>block ${entry.blockIndex}</span>
+            <span>sequence ${entry.sequence}</span>
+            <span>counterparty ${entry.counterparty || "n/a"}</span>
+          </div>
+          <div class="tx-meta">
+            <span class="mono">${entry.txid}</span>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    function buildDraft() {
+      const to = document.getElementById("sendTo").value.trim();
+      const amount = Number(document.getElementById("sendAmount").value.trim());
+      if (!currentWallet.address) {
+        document.getElementById("draftStatus").textContent = "Load or generate a wallet first.";
+        return;
+      }
+      if (!to || !Number.isFinite(amount) || amount <= 0) {
+        document.getElementById("draftStatus").textContent = "Enter a valid recipient and amount.";
+        return;
+      }
+      currentDraft = {
+        kind: "poct-send-draft",
+        sender: currentWallet.address,
+        mnemonic_hint: "stored only in browser memory",
+        to,
+        amount,
+        generated_at: new Date().toISOString(),
+      };
+      document.getElementById("draftSnapshot").textContent = JSON.stringify(currentDraft, null, 2);
+      document.getElementById("draftStatus").textContent = "Transaction draft built locally.";
     }
 
     async function loadJsonFile(file) {
@@ -402,6 +539,12 @@
       if (!currentWallet.address) return;
       await navigator.clipboard.writeText(currentWallet.address);
       document.getElementById("walletStatus").textContent = "Address copied.";
+    });
+    document.getElementById("buildDraft").addEventListener("click", buildDraft);
+    document.getElementById("copyDraft").addEventListener("click", async () => {
+      if (!currentDraft.kind) return;
+      await navigator.clipboard.writeText(JSON.stringify(currentDraft, null, 2));
+      document.getElementById("draftStatus").textContent = "Draft copied.";
     });
     document.getElementById("mnemonic").addEventListener("input", () => {
       refreshWallet();
