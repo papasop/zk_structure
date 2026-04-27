@@ -28,6 +28,12 @@ def main() -> None:
     save_parser = subparsers.add_parser("save", help="write a demo chain state file")
     save_parser.add_argument("--path", help="path to the state JSON file")
 
+    persist_demo_parser = subparsers.add_parser(
+        "persist-demo",
+        help="build the demo chain and persist it to a state file",
+    )
+    persist_demo_parser.add_argument("--path", help="path to the state JSON file")
+
     load_parser = subparsers.add_parser("load", help="load and print a saved chain summary")
     load_parser.add_argument("--path", help="path to the state JSON file")
 
@@ -40,6 +46,18 @@ def main() -> None:
     rewards_parser = subparsers.add_parser("show-rewards", help="show confirmed reward totals from a saved state")
     rewards_parser.add_argument("--path", help="path to the state JSON file")
 
+    dag_parser = subparsers.add_parser("show-dag", help="show DAG block metadata from a saved state")
+    dag_parser.add_argument("--path", help="path to the state JSON file")
+
+    virtual_parser = subparsers.add_parser("show-virtual", help="show virtual DAG order from a saved state")
+    virtual_parser.add_argument("--path", help="path to the state JSON file")
+
+    resolved_parser = subparsers.add_parser(
+        "show-resolved",
+        help="show accepted and rejected transactions under virtual conflict resolution",
+    )
+    resolved_parser.add_argument("--path", help="path to the state JSON file")
+
     args = parser.parse_args()
     if args.command == "demo":
         print(json.dumps(run_demo(), indent=2, sort_keys=True))
@@ -50,6 +68,23 @@ def main() -> None:
         target = _resolve_state_path(args.path)
         chain.save_state(target)
         print(json.dumps({"saved_to": str(target)}, indent=2, sort_keys=True))
+        return
+
+    if args.command == "persist-demo":
+        chain = build_demo_chain()
+        target = _resolve_state_path(args.path)
+        chain.save_state(target)
+        print(
+            json.dumps(
+                {
+                    "saved_to": str(target),
+                    "frontier": list(chain.frontier),
+                    "virtual_order": chain.virtual_order(),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return
 
     path = _resolve_state_path(getattr(args, "path", None))
@@ -79,6 +114,36 @@ def main() -> None:
 
     if args.command == "show-rewards":
         print(json.dumps({"confirmed_rewards": chain.confirmed_reward_totals()}, indent=2, sort_keys=True))
+        return
+
+    if args.command == "show-dag":
+        print(json.dumps({"dag": chain.dag_summary()}, indent=2, sort_keys=True))
+        return
+
+    if args.command == "show-virtual":
+        print(
+            json.dumps(
+                {
+                    "virtual_order": chain.virtual_order(),
+                    "confirmed_order": chain.confirmed_order(),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
+    if args.command == "show-resolved":
+        print(
+            json.dumps(
+                {
+                    "accepted_virtual_transactions": chain.accepted_virtual_transactions(),
+                    "resolved_virtual_blocks": chain.resolved_virtual_blocks(),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
         return
 
 

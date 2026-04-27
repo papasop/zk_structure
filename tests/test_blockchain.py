@@ -604,6 +604,88 @@ class BlockchainTests(unittest.TestCase):
             )
             self.assertIn("\"summary\"", load.stdout)
 
+    def test_cli_persist_demo_and_show_virtual(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "chain.json"
+            persist = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "persist-demo",
+                    "--path",
+                    str(state_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("virtual_order", persist.stdout)
+            show_virtual = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "show-virtual",
+                    "--path",
+                    str(state_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("\"virtual_order\"", show_virtual.stdout)
+
+    def test_cli_show_dag_and_resolved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "chain.json"
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "persist-demo",
+                    "--path",
+                    str(state_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            show_dag = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "show-dag",
+                    "--path",
+                    str(state_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("\"dag\"", show_dag.stdout)
+            show_resolved = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "show-resolved",
+                    "--path",
+                    str(state_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("\"resolved_virtual_blocks\"", show_resolved.stdout)
+
 
 if __name__ == "__main__":
     unittest.main()
