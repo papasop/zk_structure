@@ -26,12 +26,16 @@ class Blockchain:
         rate_limit_window: int = 60,
         max_txs_per_window: int = 3,
         min_tx_gap: int = 1,
+        allow_probationary_producers: bool = False,
+        allow_new_producers: bool = False,
     ):
         self.difficulty = difficulty
         self.mining_reward = mining_reward
         self.rate_limit_window = rate_limit_window
         self.max_txs_per_window = max_txs_per_window
         self.min_tx_gap = min_tx_gap
+        self.allow_probationary_producers = allow_probationary_producers
+        self.allow_new_producers = allow_new_producers
         self.blocks: List[Block] = []
         self.mempool: List[Transaction] = []
         self.utxos: Dict[Tuple[str, int], TxOutput] = {}
@@ -250,6 +254,8 @@ class Blockchain:
             self._validate_trajectory(tx)
 
     def mine_block(self, miner_address: str) -> Block:
+        if not self.producer_is_eligible(miner_address):
+            raise ValidationError("producer is not eligible to mine blocks")
         reward_tx = self._build_reward_transaction(miner_address)
         transactions = [*self.mempool, reward_tx]
         block = self._build_block(transactions)
@@ -332,6 +338,18 @@ class Blockchain:
             }
             for sender, state in self.sender_states.items()
         }
+
+    def producer_is_eligible(self, producer: str) -> bool:
+        state = self._identity_state(producer)
+        if state.phase == "penalized":
+            return False
+        if state.phase == "mature":
+            return True
+        if state.phase == "probation":
+            return self.allow_probationary_producers
+        if state.phase == "new":
+            return self.allow_new_producers
+        return False
 
     def _select_utxos(self, owner: str, amount: int) -> Tuple[List[TxInput], int]:
         selected: List[TxInput] = []

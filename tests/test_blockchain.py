@@ -71,7 +71,11 @@ class BlockchainTests(unittest.TestCase):
         self.assertEqual(tx.policy_hash, chain._policy_hash(policy))
 
     def test_next_transaction_extends_existing_trajectory(self) -> None:
-        chain = Blockchain(difficulty=1, mining_reward=5)
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+        )
         alice = Wallet("alice", "alice-seed")
         bob = Wallet("bob", "bob-seed")
         chain.faucet(alice.address, 50)
@@ -126,6 +130,7 @@ class BlockchainTests(unittest.TestCase):
             rate_limit_window=10,
             max_txs_per_window=1,
             min_tx_gap=0,
+            allow_new_producers=True,
         )
         alice = Wallet("alice", "alice-seed")
         bob = Wallet("bob", "bob-seed")
@@ -148,6 +153,48 @@ class BlockchainTests(unittest.TestCase):
                 policy=policy,
                 timestamp=105,
             )
+
+    def test_new_producer_is_rejected_by_default(self) -> None:
+        chain = Blockchain(difficulty=1, mining_reward=5)
+        alice = Wallet("alice", "alice-seed")
+        bob = Wallet("bob", "bob-seed")
+        miner = Wallet("miner", "miner-seed")
+        chain.faucet(alice.address, 50)
+        policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
+
+        tx = chain.build_transaction(
+            key=alice.key,
+            recipients=[(bob.address, 10)],
+            policy=policy,
+            timestamp=100,
+        )
+        chain.add_transaction(tx, signer_seed=alice.seed)
+
+        with self.assertRaises(ValidationError):
+            chain.mine_block(miner.address)
+
+    def test_new_producer_can_mine_with_override(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+        )
+        alice = Wallet("alice", "alice-seed")
+        bob = Wallet("bob", "bob-seed")
+        miner = Wallet("miner", "miner-seed")
+        chain.faucet(alice.address, 50)
+        policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
+
+        tx = chain.build_transaction(
+            key=alice.key,
+            recipients=[(bob.address, 10)],
+            policy=policy,
+            timestamp=100,
+        )
+        chain.add_transaction(tx, signer_seed=alice.seed)
+        block = chain.mine_block(miner.address)
+
+        self.assertEqual(block.index, 1)
 
 
 if __name__ == "__main__":

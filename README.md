@@ -113,3 +113,16 @@ The current recommended producer path is Model A:
 See:
 
 - [docs/POCT_BLOCK_PRODUCER_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_BLOCK_PRODUCER_SPEC.md)
+
+## PoCT Producer Gate
+
+The current recommended enforcement rule is a hard producer gate:
+
+- `new`: no block production
+- `probation`: no normal block production
+- `mature`: block production allowed
+- `penalized`: block production denied
+
+See:
+
+- [docs/POCT_PRODUCER_GATE_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_PRODUCER_GATE_SPEC.md)

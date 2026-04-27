@@ -8,7 +8,11 @@ from structural_crypto.node.wallet import Wallet
 
 
 def run_demo() -> dict:
-    chain = Blockchain(difficulty=2, mining_reward=10)
+    chain = Blockchain(
+        difficulty=2,
+        mining_reward=10,
+        allow_new_producers=True,
+    )
     alice = Wallet(name="alice", seed="alice-seed")
     bob = Wallet(name="bob", seed="bob-seed")
     miner = Wallet(name="miner", seed="miner-seed")
