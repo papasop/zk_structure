@@ -141,3 +141,19 @@ Once several producers are eligible, PoCT compares them by:
 See:
 
 - [docs/POCT_PRODUCER_SELECTION_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_PRODUCER_SELECTION_SPEC.md)
+
+## PoCT L0 / L1 Boundary
+
+The current repository should be understood as an `L0` prototype:
+
+- legality
+- trajectory continuity
+- producer rules
+- DAG ordering
+- confirmation
+
+Richer execution should live in `L1`, not inside the L0 core.
+
+See:
+
+- [docs/POCT_L0_L1_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_L0_L1_SPEC.md)
