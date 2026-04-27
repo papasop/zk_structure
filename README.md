@@ -294,6 +294,19 @@ See:
 
 - [docs/POCT_TOKENOMICS_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_TOKENOMICS_SPEC.md)
 
+## PoCT Rewards
+
+The repository now also defines the fixed `v0.1` reward rule for:
+
+- base emission by block range
+- producer phase reward shares
+- confirmation-gated payout
+- zero reward for `new` and `penalized`
+
+See:
+
+- [docs/POCT_REWARD_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_REWARD_SPEC.md)
+
 ## PoCT Persistence
 
 The current prototype now includes:

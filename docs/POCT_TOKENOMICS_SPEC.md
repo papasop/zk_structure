@@ -140,7 +140,7 @@ instead of:
 
 Base issuance is not the whole reward.
 
-Actual producer reward may later be modeled as:
+Actual producer reward in the current recommended `v0.1` rule is:
 
 `actual_reward = base_emission * producer_share * confirmation_factor`
 
@@ -154,6 +154,10 @@ In other words:
 
 the issuance curve defines the reward budget,
 while PoCT determines how that budget is distributed.
+
+The fixed `v0.1` distribution rule is defined in:
+
+- [POCT_REWARD_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_REWARD_SPEC.md)
 
 ## Fixed Tail Emission
 

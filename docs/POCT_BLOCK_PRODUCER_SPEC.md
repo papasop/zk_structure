@@ -169,6 +169,10 @@ Recommended rule:
 
 This prevents large numbers of AI agents from farming producer rewards immediately after joining.
 
+The fixed `v0.1` reward formula and phase-share table are defined in:
+
+- [POCT_REWARD_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_REWARD_SPEC.md)
+
 ## Why This Fits Large AI-Agent Systems
 
 Model A is designed for a world where many AI agents may exist.
