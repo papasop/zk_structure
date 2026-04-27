@@ -33,6 +33,16 @@ def _recipient_from_args(wallet_path: str | None, wallet_name: str | None, recip
     return Wallet.load(target).address
 
 
+def _parse_emission_stage(stage: str) -> dict:
+    try:
+        start_block, reward = stage.split(":", 1)
+        return {"start_block": int(start_block), "reward": float(reward)}
+    except Exception as exc:  # pragma: no cover - argparse surfaces this path
+        raise argparse.ArgumentTypeError(
+            f"invalid emission stage '{stage}', expected format START_BLOCK:REWARD"
+        ) from exc
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="structural-chain",
@@ -46,6 +56,17 @@ def main() -> None:
     init_parser.add_argument("--path", help="path to the state JSON file")
     init_parser.add_argument("--difficulty", type=int, default=1, help="block seal difficulty")
     init_parser.add_argument("--producer-reward", type=int, default=10, help="producer reward amount")
+    init_parser.add_argument(
+        "--emission-stage",
+        action="append",
+        type=_parse_emission_stage,
+        help="emission stage in START_BLOCK:REWARD form; can be repeated",
+    )
+    init_parser.add_argument(
+        "--tail-reward-floor",
+        type=float,
+        help="fixed low tail emission floor",
+    )
     init_parser.add_argument(
         "--allow-new-producers",
         action="store_true",
@@ -147,6 +168,8 @@ def main() -> None:
         chain = Blockchain(
             difficulty=args.difficulty,
             producer_reward=args.producer_reward,
+            emission_schedule=args.emission_stage,
+            tail_reward_floor=args.tail_reward_floor,
             allow_new_producers=args.allow_new_producers,
         )
         target = _resolve_state_path(args.path)

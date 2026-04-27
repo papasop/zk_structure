@@ -409,3 +409,36 @@ class NodeL1ZKTests(unittest.TestCase):
                 check=True,
             )
             self.assertIn("\"balance\": 5", balance.stdout)
+
+    def test_cli_init_accepts_emission_schedule(self) -> None:
+        import subprocess
+        import sys
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "chain.json"
+            init = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "init",
+                    "--path",
+                    str(state_path),
+                    "--allow-new-producers",
+                    "--emission-stage",
+                    "1:10",
+                    "--emission-stage",
+                    "3:5",
+                    "--tail-reward-floor",
+                    "1",
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("\"saved_to\"", init.stdout)
+            chain = Blockchain.load_state(state_path)
+            self.assertEqual(chain.reward_amount_for_block(1), 10.0)
+            self.assertEqual(chain.reward_amount_for_block(3), 5.0)
+            self.assertEqual(chain.tail_reward_floor, 1.0)
