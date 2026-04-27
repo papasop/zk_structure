@@ -53,9 +53,11 @@ The reward curve therefore has three properties:
 2. mid-stage emissions decline in steps
 3. late-stage emissions flatten into a very low constant tail
 
-## Example Emission Curve
+## Current Recommended Mainnet Draft
 
-The following example is illustrative and can be tuned before mainnet:
+The following schedule is the current recommended `v0.1` mainnet draft.
+
+It should be treated as the repository's active monetary-policy baseline unless a later governance revision replaces it.
 
 ### Epoch Range 1
 
@@ -82,9 +84,39 @@ The following example is illustrative and can be tuned before mainnet:
 - all later blocks
 - fixed tail reward: `0.05`
 
-This is only a shape example.
+## Supply Interpretation
 
-The exact block windows and values may be adjusted before production deployment.
+Under the draft above:
+
+- stage 1 issuance: `10,000,000`
+- stage 2 issuance: `5,000,000`
+- stage 3 issuance: `2,500,000`
+- stage 4 issuance: `1,250,000`
+
+That means:
+
+- pre-tail issuance subtotal: `18,750,000`
+- soft-cap reference supply: approximately `18.75M`
+
+The protocol therefore does **not** use a hard absolute cap.
+
+It uses:
+
+- a clear declining primary issuance phase
+- a soft-cap reference around `18.75M`
+- a permanent low maintenance tail of `0.05` per block thereafter
+
+## Why This Counts As A Soft Cap
+
+The system has a practical issuance plateau because:
+
+- the overwhelming majority of issuance happens in the first four stages
+- later supply growth becomes very slow and linear
+- the tail exists to preserve ongoing network maintenance incentives rather than to fund high inflation
+
+So the correct external description is:
+
+**soft cap near `18.75M`, followed by extremely low perpetual tail issuance**
 
 ## Mainnet Supply Philosophy
 
@@ -154,11 +186,14 @@ Mainnet tokenomics should be treated separately from testnet utility issuance.
 
 ## Governance Boundary
 
-This specification defines the **policy direction** for first-stage emissions.
+This specification now defines the **recommended `v0.1` mainnet issuance rule** for:
 
-It does not yet hard-code:
+- stage rewards
+- pre-tail soft-cap reference
+- fixed tail floor
 
-- exact total cap
+It still does not yet hard-code:
+
 - treasury allocation
 - vesting schedules
 - L1 settlement rewards
@@ -170,8 +205,13 @@ Those should be specified in a later tokenomics/governance phase.
 
 For first implementation work, the protocol should assume:
 
-- declining reward schedule
-- fixed low tail floor
+- declining reward schedule with these stages:
+  - `0 - 999,999`: `10.0`
+  - `1,000,000 - 1,999,999`: `5.0`
+  - `2,000,000 - 2,999,999`: `2.5`
+  - `3,000,000 - 3,999,999`: `1.25`
+- fixed low tail floor of `0.05`
+- pre-tail soft-cap reference of `18.75M`
 - no dynamic tail inflation
 
 This should be the default monetary stance until a later `v0.2+` review.
@@ -180,7 +220,7 @@ This should be the default monetary stance until a later `v0.2+` review.
 
 Later versions may extend this with:
 
-- explicit mainnet supply ceiling
+- optional explicit hard ceiling if the protocol later decides to end tail issuance
 - treasury routing
 - research and ecosystem allocations
 - dynamic tail emission with bounded range
