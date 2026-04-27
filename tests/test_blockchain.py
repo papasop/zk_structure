@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -567,6 +569,40 @@ class BlockchainTests(unittest.TestCase):
     def test_default_state_path_uses_poct_dir(self) -> None:
         path = Blockchain.default_state_path()
         self.assertEqual(path, Path(".poct") / "chain_state.json")
+
+    def test_cli_save_and_load(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "chain.json"
+            save = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "save",
+                    "--path",
+                    str(state_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("saved_to", save.stdout)
+            load = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "load",
+                    "--path",
+                    str(state_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("\"summary\"", load.stdout)
 
 
 if __name__ == "__main__":

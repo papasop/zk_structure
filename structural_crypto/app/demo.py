@@ -7,7 +7,7 @@ from structural_crypto.ledger.blockchain import Blockchain
 from structural_crypto.node.wallet import Wallet
 
 
-def run_demo() -> dict:
+def build_demo_chain() -> Blockchain:
     chain = Blockchain(
         difficulty=2,
         mining_reward=10,
@@ -30,8 +30,13 @@ def run_demo() -> dict:
         policy=policy,
     )
     chain.add_transaction(tx, signer_seed=alice.seed)
-    block = chain.mine_block(miner.address)
+    chain.mine_block(miner.address)
+    return chain
 
+
+def run_demo() -> dict:
+    chain = build_demo_chain()
+    block = chain.blocks[-1]
     return {
         "block_index": block.index,
         "block_hash": block.block_hash,
