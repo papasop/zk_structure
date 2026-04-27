@@ -19,6 +19,7 @@ Define the first headless multi-node architecture for PoCT testing.
 - `PeerInfo`
 - `GossipEnvelope`
 - RPC request/response layer
+- local file-spool gossip mode for multi-process testing
 
 ## Required Network Tests
 

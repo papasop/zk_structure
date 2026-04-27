@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing
 import tempfile
 import unittest
 from pathlib import Path
@@ -13,6 +14,16 @@ from structural_crypto.node.p2p import GossipEnvelope, PeerInfo
 from structural_crypto.node.rpc import RPCRequest
 from structural_crypto.testing.loadgen import AgentSpec, LoadGenerator
 from structural_crypto.zk import MockZKBackend
+
+
+def _produce_block_to_spool(spool_dir: str) -> None:
+    node = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+    producer = Wallet("producer-a", "producer-a-seed")
+    node.chain._identity_state(producer.address).phase = "mature"
+    node.chain._identity_state(producer.address).compliant_txs = 30
+    node.add_peer(PeerInfo(node_id="node-b", endpoint="local-spool"))
+    node.produce_block(producer.address)
+    node.write_envelopes(spool_dir)
 
 
 class NodeL1ZKTests(unittest.TestCase):
@@ -40,6 +51,55 @@ class NodeL1ZKTests(unittest.TestCase):
 
         self.assertEqual(node.outbox[-1].kind, "transaction")
         self.assertEqual(node.outbox[-1].payload["txid"], tx.txid)
+
+    def test_node_can_sync_missing_frontier_blocks_from_peer(self) -> None:
+        producer = Wallet("producer-a", "producer-a-seed")
+        node_a = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_b = PoCTNode("node-b", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_a.chain._identity_state(producer.address).phase = "mature"
+        node_a.chain._identity_state(producer.address).compliant_txs = 30
+
+        block = node_a.produce_block(producer.address)
+        imported = node_b.sync_blocks_from_peer(node_a)
+
+        self.assertIn(block.block_hash, imported)
+        self.assertIn(block.block_hash, node_b.chain.block_by_hash)
+        self.assertEqual(node_b.chain.frontier, node_a.chain.frontier)
+
+    def test_file_spool_gossip_transfers_block(self) -> None:
+        producer = Wallet("producer-a", "producer-a-seed")
+        node_a = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_b = PoCTNode("node-b", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_a.chain._identity_state(producer.address).phase = "mature"
+        node_a.chain._identity_state(producer.address).compliant_txs = 30
+        node_a.add_peer(PeerInfo(node_id="node-b", endpoint="local-spool"))
+
+        block = node_a.produce_block(producer.address)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            written = node_a.write_envelopes(tmpdir)
+            self.assertGreater(written, 0)
+            read = node_b.read_envelopes(tmpdir)
+            self.assertGreater(read, 0)
+            processed = node_b.process_inbox()
+
+        self.assertGreater(processed, 0)
+        self.assertIn(block.block_hash, node_b.chain.block_by_hash)
+        self.assertEqual(node_b.chain.frontier, node_a.chain.frontier)
+
+    def test_multiprocess_local_gossip_syncs_block(self) -> None:
+        node_b = PoCTNode("node-b", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            proc = multiprocessing.Process(target=_produce_block_to_spool, args=(tmpdir,))
+            proc.start()
+            proc.join(timeout=10)
+            self.assertEqual(proc.exitcode, 0)
+
+            read = node_b.read_envelopes(tmpdir)
+            processed = node_b.process_inbox()
+
+        self.assertGreater(read, 0)
+        self.assertGreater(processed, 0)
+        self.assertGreater(len(node_b.chain.blocks), 1)
 
     def test_node_save_and_load(self) -> None:
         node = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
