@@ -163,7 +163,7 @@ class NodeL1ZKTests(unittest.TestCase):
             path = wallet.save(Path(tmpdir) / "alice.json")
             restored = Wallet.load(path)
         self.assertEqual(restored.name, wallet.name)
-        self.assertEqual(restored.seed, wallet.seed)
+        self.assertEqual(restored.mnemonic, wallet.mnemonic)
         self.assertEqual(restored.address, wallet.address)
 
     def test_gossip_envelope_forward_decrements_ttl(self) -> None:
@@ -269,3 +269,143 @@ class NodeL1ZKTests(unittest.TestCase):
                 check=True,
             )
             self.assertIn("\"wallet\"", show.stdout)
+            self.assertIn("\"mnemonic\"", show.stdout)
+            address = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "wallet-address",
+                    "--path",
+                    str(wallet_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("\"address\"", address.stdout)
+
+    def test_cli_local_chain_flow(self) -> None:
+        import subprocess
+        import sys
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_path = Path(tmpdir) / "chain.json"
+            alice_wallet = Path(tmpdir) / "alice.json"
+            bob_wallet = Path(tmpdir) / "bob.json"
+            producer_wallet = Path(tmpdir) / "producer.json"
+            cwd = Path(__file__).resolve().parents[1]
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "init",
+                    "--path",
+                    str(state_path),
+                    "--allow-new-producers",
+                ],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            for name, wallet_path, seed in (
+                ("alice", alice_wallet, "alice-seed"),
+                ("bob", bob_wallet, "bob-seed"),
+                ("producer", producer_wallet, "producer-seed"),
+            ):
+                subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "structural_crypto.app.cli",
+                        "wallet-create",
+                        "--name",
+                        name,
+                        "--seed",
+                        seed,
+                        "--path",
+                        str(wallet_path),
+                    ],
+                    cwd=cwd,
+                    capture_output=True,
+                    text=True,
+                    check=True,
+                )
+
+            subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "faucet",
+                    "--path",
+                    str(state_path),
+                    "--wallet-path",
+                    str(alice_wallet),
+                    "--amount",
+                    "20",
+                ],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            send = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "send",
+                    "--path",
+                    str(state_path),
+                    "--wallet-path",
+                    str(alice_wallet),
+                    "--to",
+                    Wallet.load(bob_wallet).address,
+                    "--amount",
+                    "5",
+                ],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("\"mempool_size\": 1", send.stdout)
+            produce = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "produce",
+                    "--path",
+                    str(state_path),
+                    "--wallet-path",
+                    str(producer_wallet),
+                ],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("\"block_hash\"", produce.stdout)
+            balance = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "balance",
+                    "--path",
+                    str(state_path),
+                    "--wallet-path",
+                    str(bob_wallet),
+                ],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("\"balance\": 5", balance.stdout)
