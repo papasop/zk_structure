@@ -79,3 +79,11 @@ See:
 
 - [docs/POCT_COLD_START.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_COLD_START.md)
 - [structural_crypto/consensus/cold_start.py](/Users/bai/Documents/New%20project/zk_structure/structural_crypto/consensus/cold_start.py)
+
+## PoCT-DAG Direction
+
+The next protocol layer is a DAG ordering model inspired by the shape of Kaspa's parallel block graph, but rooted in PoCT legitimacy rather than `PoW`.
+
+See:
+
+- [docs/POCT_DAG_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_DAG_SPEC.md)
