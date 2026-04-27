@@ -87,3 +87,17 @@ The next protocol layer is a DAG ordering model inspired by the shape of Kaspa's
 See:
 
 - [docs/POCT_DAG_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_DAG_SPEC.md)
+
+## PoCT Trajectory Layer
+
+The concrete next protocol step is the trajectory validity layer:
+
+- per-identity `prev`
+- sequence continuity
+- branch-conflict detection
+- identity state transitions
+- rate-limit-aware legitimacy
+
+See:
+
+- [docs/POCT_TRAJECTORY_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_TRAJECTORY_SPEC.md)
