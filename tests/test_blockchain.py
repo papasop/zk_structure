@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from pathlib import Path
+import tempfile
 import unittest
 
 from structural_crypto.app.demo import run_demo
@@ -532,6 +534,39 @@ class BlockchainTests(unittest.TestCase):
         payload = chain.export_state_json()
         self.assertIsInstance(payload, str)
         self.assertIn("\"blocks\"", payload)
+
+    def test_save_and_load_state_file_roundtrip(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+        )
+        alice = Wallet("alice", "alice-seed")
+        bob = Wallet("bob", "bob-seed")
+        miner = Wallet("miner", "miner-seed")
+        chain.faucet(alice.address, 50)
+        policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
+
+        tx = chain.build_transaction(
+            key=alice.key,
+            recipients=[(bob.address, 10)],
+            policy=policy,
+            timestamp=100,
+        )
+        chain.add_transaction(tx, signer_seed=alice.seed)
+        chain.mine_block(miner.address)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = chain.save_state(Path(tmpdir) / "chain_state.json")
+            restored = Blockchain.load_state(path)
+
+        self.assertEqual(restored.chain_summary(), chain.chain_summary())
+        self.assertEqual(restored.virtual_order(), chain.virtual_order())
+        self.assertEqual(restored.frontier, chain.frontier)
+
+    def test_default_state_path_uses_poct_dir(self) -> None:
+        path = Blockchain.default_state_path()
+        self.assertEqual(path, Path(".poct") / "chain_state.json")
 
 
 if __name__ == "__main__":

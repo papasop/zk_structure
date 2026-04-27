@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from pathlib import Path
 import time
 from dataclasses import asdict
 from dataclasses import replace
@@ -127,6 +128,22 @@ class Blockchain:
 
     def export_state_json(self) -> str:
         return json.dumps(self.export_state(), sort_keys=True, separators=(",", ":"))
+
+    def save_state(self, path: str | Path) -> Path:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(self.export_state_json(), encoding="utf-8")
+        return target
+
+    @classmethod
+    def load_state(cls, path: str | Path) -> "Blockchain":
+        source = Path(path)
+        state = json.loads(source.read_text(encoding="utf-8"))
+        return cls.from_state(state)
+
+    @staticmethod
+    def default_state_path(base_dir: str | Path = ".poct") -> Path:
+        return Path(base_dir) / "chain_state.json"
 
     def _create_genesis_block(self) -> None:
         block = Block(
