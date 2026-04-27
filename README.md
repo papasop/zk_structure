@@ -169,3 +169,11 @@ The current prototype now includes:
 See:
 
 - [docs/POCT_PERSISTENCE_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_PERSISTENCE_SPEC.md)
+
+## PoCT Repository Governance
+
+The repository now also defines a governance model for code contribution, review, and merge authority in environments with many contributors, including AI agents.
+
+See:
+
+- [docs/POCT_REPO_GOVERNANCE.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_REPO_GOVERNANCE.md)
