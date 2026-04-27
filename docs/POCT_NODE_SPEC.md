@@ -38,3 +38,7 @@ Define the first headless multi-node architecture for PoCT testing.
 - state reload from local snapshot
 
 Full peer discovery and anti-entropy are deferred.
+
+The detailed convergence contract for those sync steps is defined in:
+
+- [POCT_SYNC_CONVERGENCE_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_SYNC_CONVERGENCE_SPEC.md)

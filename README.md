@@ -97,10 +97,24 @@ The concrete next protocol step is the trajectory validity layer:
 - branch-conflict detection
 - identity state transitions
 - rate-limit-aware legitimacy
+- compatibility with later key rotation and recovery
 
 See:
 
 - [docs/POCT_TRAJECTORY_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_TRAJECTORY_SPEC.md)
+
+## PoCT Identity Control Layer
+
+The repository now also defines the first layered identity-control model:
+
+- `identity` as a durable history object
+- hot spend keys as replaceable action keys
+- `2-of-3` guardian recovery as the initial recommended baseline
+- explicit key rotation and delayed recovery flow
+
+See:
+
+- [docs/POCT_IDENTITY_CONTROL_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_IDENTITY_CONTROL_SPEC.md)
 
 ## PoCT Producer Model
 
@@ -179,6 +193,8 @@ See:
 The repository now also includes first-pass specifications and code skeletons for:
 
 - multi-node PoCT networking
+- sync and convergence across nodes
+- identity control and key recovery
 - zk backend integration
 - stress testing
 - security review preparation
@@ -188,6 +204,8 @@ The repository now also includes first-pass specifications and code skeletons fo
 See:
 
 - [docs/POCT_NODE_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_NODE_SPEC.md)
+- [docs/POCT_SYNC_CONVERGENCE_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_SYNC_CONVERGENCE_SPEC.md)
+- [docs/POCT_IDENTITY_CONTROL_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_IDENTITY_CONTROL_SPEC.md)
 - [docs/POCT_ZK_BACKEND_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_ZK_BACKEND_SPEC.md)
 - [docs/POCT_STRESS_TEST_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_STRESS_TEST_SPEC.md)
 - [docs/POCT_SECURITY_AUDIT_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_SECURITY_AUDIT_SPEC.md)

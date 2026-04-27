@@ -5,6 +5,9 @@
 PoCT requires more than transaction validity.
 It requires that each accepted action belongs to a continuous, identity-bound, policy-constrained trajectory.
 
+For `v0.1`, the current codebase still models sender continuity mostly through sender-like address keys.
+The long-term design direction is to bind trajectory continuity to a durable `identity_id` whose authorized action keys may rotate over time.
+
 This document defines:
 
 - the minimum trajectory fields for each transaction
@@ -36,6 +39,12 @@ Each transaction should include the following additional fields beyond ordinary 
 - `policy_hash`
 - `delta`
 - `sender_head_commitment`
+
+In the current prototype, `sender` is still close to an address-like public key.
+In the recommended layered design, this should evolve toward:
+
+- `sender = identity_id`
+- separate authorized action key metadata and signatures
 
 ### Field Meaning
 
@@ -102,6 +111,8 @@ Purpose:
 - helps prevent hidden parallel heads
 - makes state transitions more explicit to validators
 
+In a later identity-layered version, this should become an identity-bound head commitment rather than a commitment to a single long-lived hot key.
+
 ## Genesis Rule for a Trajectory
 
 A new trajectory may begin only if:
@@ -129,11 +140,11 @@ If any of these fail, the transaction is rejected before ordering.
 
 ## Uniqueness Validity
 
-For a sender, there may be only one accepted next action after a given head.
+For an identity, there may be only one accepted next action after a given head.
 
 That means:
 
-- one sender
+- one active identity
 - one active trajectory
 - one next valid successor per head
 
@@ -145,7 +156,7 @@ A branch conflict exists when any of the following occur:
 
 ### Type A: Same `prev`, different transaction
 
-Two distinct transactions from the same sender reference the same `prev`.
+Two distinct transactions from the same identity reference the same `prev`.
 
 Meaning:
 
@@ -153,7 +164,7 @@ Meaning:
 
 ### Type B: Same `(sender, sequence)`, different transaction
 
-Two distinct transactions claim the same sequence position.
+Two distinct transactions claim the same identity sequence position.
 
 Meaning:
 
@@ -169,7 +180,7 @@ Meaning:
 
 ### Type D: Hidden trajectory reset
 
-The sender introduces a fresh `trajectory_id` without a valid closure or penalty transition.
+The identity introduces a fresh `trajectory_id` without a valid closure or penalty transition.
 
 Meaning:
 
@@ -184,11 +195,11 @@ A branch conflict should:
 - reduce ordering score
 - delay or revoke maturity
 
-Repeated branch conflicts may move the sender into a `penalized` state.
+Repeated branch conflicts may move the identity into a `penalized` state.
 
 ## Identity State Machine
 
-Each sender belongs to one state:
+Each identity belongs to one state:
 
 - `new`
 - `probation`
@@ -247,6 +258,20 @@ Properties:
 - reduced or zero ordering influence
 - reduced reward eligibility
 - may require explicit recovery period or trajectory closure
+
+## Key Rotation Compatibility
+
+Trajectory continuity should survive key rotation.
+
+That means:
+
+- changing the active spend key should not create a fresh trajectory by default
+- changing the producer key should not erase maturity
+- recovery should continue the same identity history once finalized
+
+See:
+
+- [POCT_IDENTITY_CONTROL_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_IDENTITY_CONTROL_SPEC.md)
 
 ## Suggested Transition Triggers
 

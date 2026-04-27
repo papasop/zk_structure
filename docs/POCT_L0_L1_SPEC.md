@@ -18,6 +18,7 @@ PoCT-L0 is **not** a traditional smart-contract VM layer.
 PoCT-L0 is responsible for:
 
 - identity entry and maturation
+- identity control and key rotation legality
 - trajectory legitimacy
 - producer eligibility
 - producer ordering
@@ -54,6 +55,9 @@ The following belong in L0:
 ### 1. Identity and Cold Start
 
 - `new / probation / mature / penalized`
+- identity object continuity
+- active key authorization
+- recovery-policy enforcement
 - external bootstrap credential inputs
 - ordering score growth
 
