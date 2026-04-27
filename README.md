@@ -126,3 +126,18 @@ The current recommended enforcement rule is a hard producer gate:
 See:
 
 - [docs/POCT_PRODUCER_GATE_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_PRODUCER_GATE_SPEC.md)
+
+## PoCT Producer Selection
+
+Once several producers are eligible, PoCT compares them by:
+
+- phase
+- ordering score
+- average delta
+- branch conflicts
+- timestamp
+- producer id
+
+See:
+
+- [docs/POCT_PRODUCER_SELECTION_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_PRODUCER_SELECTION_SPEC.md)

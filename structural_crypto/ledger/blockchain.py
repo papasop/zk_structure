@@ -351,6 +351,23 @@ class Blockchain:
             return self.allow_new_producers
         return False
 
+    def producer_priority(self, producer: str, proposed_timestamp: Optional[int] = None) -> tuple:
+        identity_state = self._identity_state(producer)
+        sender_state = self.sender_states.get(producer, SenderTrajectoryState(sender=producer))
+        phase_rank = self._phase_rank(identity_state.phase)
+        ordering_score = self.cold_start.ordering_score(identity_state)
+        average_delta = identity_state.average_delta
+        branch_conflicts = sender_state.branch_conflicts
+        timestamp = proposed_timestamp if proposed_timestamp is not None else int(time.time())
+        return (
+            -phase_rank,
+            -ordering_score,
+            average_delta,
+            branch_conflicts,
+            timestamp,
+            producer,
+        )
+
     def _select_utxos(self, owner: str, amount: int) -> Tuple[List[TxInput], int]:
         selected: List[TxInput] = []
         running_total = 0
@@ -618,3 +635,13 @@ class Blockchain:
     def _trim_epochs(self, epochs: List[int], current_epoch: int) -> List[int]:
         cutoff = current_epoch - self.rate_limit_window
         return [epoch for epoch in epochs if epoch >= cutoff]
+
+    @staticmethod
+    def _phase_rank(phase: str) -> int:
+        ranks = {
+            "mature": 3,
+            "probation": 2,
+            "new": 1,
+            "penalized": 0,
+        }
+        return ranks.get(phase, -1)

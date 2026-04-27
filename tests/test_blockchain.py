@@ -196,6 +196,46 @@ class BlockchainTests(unittest.TestCase):
 
         self.assertEqual(block.index, 1)
 
+    def test_producer_priority_prefers_mature_over_new(self) -> None:
+        chain = Blockchain(difficulty=1, mining_reward=5)
+        mature = Wallet("mature", "mature-seed")
+        new = Wallet("newbie", "newbie-seed")
+
+        mature_state = chain._identity_state(mature.address)
+        mature_state.phase = "mature"
+        mature_state.compliant_txs = 25
+        mature_state.average_delta = 0.2
+
+        new_state = chain._identity_state(new.address)
+        new_state.phase = "new"
+        new_state.compliant_txs = 0
+        new_state.average_delta = 0.0
+
+        self.assertLess(
+            chain.producer_priority(mature.address, proposed_timestamp=100),
+            chain.producer_priority(new.address, proposed_timestamp=100),
+        )
+
+    def test_producer_priority_uses_delta_as_tiebreak(self) -> None:
+        chain = Blockchain(difficulty=1, mining_reward=5)
+        a = Wallet("a", "a-seed")
+        b = Wallet("b", "b-seed")
+
+        a_state = chain._identity_state(a.address)
+        a_state.phase = "mature"
+        a_state.compliant_txs = 20
+        a_state.average_delta = 0.1
+
+        b_state = chain._identity_state(b.address)
+        b_state.phase = "mature"
+        b_state.compliant_txs = 20
+        b_state.average_delta = 0.8
+
+        self.assertLess(
+            chain.producer_priority(a.address, proposed_timestamp=100),
+            chain.producer_priority(b.address, proposed_timestamp=100),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
