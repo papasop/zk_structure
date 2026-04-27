@@ -157,3 +157,15 @@ Richer execution should live in `L1`, not inside the L0 core.
 See:
 
 - [docs/POCT_L0_L1_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_L0_L1_SPEC.md)
+
+## PoCT Persistence
+
+The current prototype now includes:
+
+- JSON state export
+- file-based save/load
+- CLI state inspection commands
+
+See:
+
+- [docs/POCT_PERSISTENCE_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_PERSISTENCE_SPEC.md)
