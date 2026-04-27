@@ -52,6 +52,27 @@ class NodeL1ZKTests(unittest.TestCase):
         self.assertEqual(node.outbox[-1].kind, "transaction")
         self.assertEqual(node.outbox[-1].payload["txid"], tx.txid)
 
+    def test_transaction_gossip_imports_into_peer_mempool(self) -> None:
+        chain_a = Blockchain(difficulty=1, producer_reward=5, allow_new_producers=True)
+        chain_b = Blockchain(difficulty=1, producer_reward=5, allow_new_producers=True)
+        node_a = PoCTNode("node-a", chain=chain_a)
+        node_b = PoCTNode("node-b", chain=chain_b)
+        node_a.add_peer(PeerInfo(node_id="node-b", endpoint="local-spool"))
+        alice = Wallet("alice", "alice-seed")
+        bob = Wallet("bob", "bob-seed")
+        chain_a.faucet(alice.address, 10)
+        chain_b.faucet(alice.address, 10)
+        policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=5, allowed_recipients=[bob.address])
+        tx = chain_a.build_transaction(alice.key, [(bob.address, 5)], policy, timestamp=100)
+
+        node_a.submit_transaction(tx, signer_seed=alice.seed)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            node_a.write_envelopes(tmpdir)
+            node_b.read_envelopes(tmpdir)
+            node_b.process_inbox()
+
+        self.assertTrue(any(item.txid == tx.txid for item in node_b.chain.mempool))
+
     def test_node_can_sync_missing_frontier_blocks_from_peer(self) -> None:
         producer = Wallet("producer-a", "producer-a-seed")
         node_a = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
@@ -107,6 +128,15 @@ class NodeL1ZKTests(unittest.TestCase):
             path = node.save(Path(tmpdir) / "node.json")
             restored = PoCTNode.load("node-a", path)
         self.assertEqual(restored.chain.chain_summary(), node.chain.chain_summary())
+
+    def test_wallet_save_and_load_round_trip(self) -> None:
+        wallet = Wallet.create("alice", seed="alice-seed")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = wallet.save(Path(tmpdir) / "alice.json")
+            restored = Wallet.load(path)
+        self.assertEqual(restored.name, wallet.name)
+        self.assertEqual(restored.seed, wallet.seed)
+        self.assertEqual(restored.address, wallet.address)
 
     def test_gossip_envelope_forward_decrements_ttl(self) -> None:
         envelope = GossipEnvelope(kind="block", origin="node-a", payload={"block_hash": "abc"}, ttl=3)
@@ -170,3 +200,44 @@ class NodeL1ZKTests(unittest.TestCase):
 
         self.assertEqual(len(txs), 1)
         self.assertEqual(txs[0].outputs[0].recipient, bob.address)
+
+    def test_cli_wallet_create_and_show(self) -> None:
+        import subprocess
+        import sys
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            wallet_path = Path(tmpdir) / "alice.json"
+            create = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "wallet-create",
+                    "--name",
+                    "alice",
+                    "--seed",
+                    "alice-seed",
+                    "--path",
+                    str(wallet_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("\"saved_to\"", create.stdout)
+            show = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "structural_crypto.app.cli",
+                    "wallet-show",
+                    "--path",
+                    str(wallet_path),
+                ],
+                cwd=Path(__file__).resolve().parents[1],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            self.assertIn("\"wallet\"", show.stdout)

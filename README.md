@@ -194,6 +194,14 @@ See:
 - [docs/POCT_STATE_TRANSITION_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_STATE_TRANSITION_SPEC.md)
 - [docs/POCT_L1_EXECUTION_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_L1_EXECUTION_SPEC.md)
 
+## CLI Wallet And Local Node Gossip
+
+The prototype now also includes:
+
+- local CLI wallet create/show flow
+- transaction gossip import between local nodes
+- file-spool local multi-process node testing
+
 ## PoCT Persistence
 
 The current prototype now includes:

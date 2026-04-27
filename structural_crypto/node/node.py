@@ -30,7 +30,11 @@ class PoCTNode:
             GossipEnvelope(
                 kind="transaction",
                 origin=self.node_id,
-                payload={"txid": tx.txid},
+                payload={
+                    "txid": tx.txid,
+                    "tx": self.chain._transaction_to_dict(tx),
+                    "signer_seed": signer_seed,
+                },
             )
         )
 
@@ -114,6 +118,10 @@ class PoCTNode:
         if request.method == "get_block":
             block_hash = request.params["block_hash"]
             return RPCResponse(ok=True, result={"block": self.export_block(block_hash)})
+        if request.method == "submit_tx":
+            tx = self.chain._transaction_from_dict(request.params["tx"])
+            self.submit_transaction(tx, signer_seed=request.params["signer_seed"])
+            return RPCResponse(ok=True, result={"txid": tx.txid})
         if request.method == "get_l1_feed":
             confirmed_only = request.params.get("confirmed_only", True)
             return RPCResponse(ok=True, result=self.export_l1_feed(confirmed_only=confirmed_only))
@@ -165,6 +173,11 @@ class PoCTNode:
     def _handle_envelope(self, envelope: GossipEnvelope) -> None:
         if envelope.kind == "block" and "block" in envelope.payload:
             self.import_block(envelope.payload["block"])
+        if envelope.kind == "transaction" and "tx" in envelope.payload:
+            tx = self.chain._transaction_from_dict(envelope.payload["tx"])
+            signer_seed = envelope.payload["signer_seed"]
+            if not any(existing.txid == tx.txid for existing in self.chain.mempool):
+                self.chain.add_transaction(tx, signer_seed=signer_seed)
         if envelope.kind == "sync-summary":
             self.sync_frontier_from_peer(envelope.payload)
 

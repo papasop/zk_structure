@@ -8,12 +8,21 @@ from pathlib import Path
 
 from structural_crypto.app.demo import build_demo_chain, run_demo
 from structural_crypto.ledger.blockchain import Blockchain
+from structural_crypto.node import Wallet
 
 
 def _resolve_state_path(path_arg: str | None) -> Path:
     if path_arg:
         return Path(path_arg)
     return Blockchain.default_state_path()
+
+
+def _resolve_wallet_path(path_arg: str | None, name: str | None = None) -> Path:
+    if path_arg:
+        return Path(path_arg)
+    if not name:
+        raise ValueError("wallet name is required when no wallet path is provided")
+    return Wallet.default_path(name)
 
 
 def main() -> None:
@@ -70,9 +79,31 @@ def main() -> None:
         help="feed scope to export",
     )
 
+    wallet_create_parser = subparsers.add_parser("wallet-create", help="create a local CLI wallet file")
+    wallet_create_parser.add_argument("--name", required=True, help="wallet name")
+    wallet_create_parser.add_argument("--seed", help="optional deterministic seed")
+    wallet_create_parser.add_argument("--path", help="wallet JSON path")
+
+    wallet_show_parser = subparsers.add_parser("wallet-show", help="show a local CLI wallet file")
+    wallet_show_parser.add_argument("--path", help="wallet JSON path")
+    wallet_show_parser.add_argument("--name", help="wallet name if using default path")
+
     args = parser.parse_args()
     if args.command == "demo":
         print(json.dumps(run_demo(), indent=2, sort_keys=True))
+        return
+
+    if args.command == "wallet-create":
+        wallet = Wallet.create(name=args.name, seed=args.seed)
+        target = _resolve_wallet_path(args.path, args.name)
+        wallet.save(target)
+        print(json.dumps({"wallet": wallet.to_dict(), "saved_to": str(target)}, indent=2, sort_keys=True))
+        return
+
+    if args.command == "wallet-show":
+        target = _resolve_wallet_path(args.path, args.name)
+        wallet = Wallet.load(target)
+        print(json.dumps({"wallet": wallet.to_dict(), "path": str(target)}, indent=2, sort_keys=True))
         return
 
     if args.command == "save":
