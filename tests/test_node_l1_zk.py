@@ -158,6 +158,114 @@ class NodeL1ZKTests(unittest.TestCase):
             restored = PoCTNode.load("node-a", path)
         self.assertEqual(restored.chain.chain_summary(), node.chain.chain_summary())
 
+    def test_node_save_and_load_preserves_network_state(self) -> None:
+        node = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node.add_peer(PeerInfo(node_id="node-b", endpoint="local-spool"))
+        node.receive(GossipEnvelope(kind="sync-summary", origin="node-b", payload={"frontier": []}, ttl=4))
+        node.spool_sequence = 7
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = node.save(Path(tmpdir) / "node.json")
+            restored = PoCTNode.load("node-a", path)
+        self.assertIn("node-b", restored.peers)
+        self.assertEqual(restored.peers["node-b"].endpoint, "local-spool")
+        self.assertEqual(len(restored.inbox), 1)
+        self.assertEqual(restored.spool_sequence, 7)
+        self.assertEqual(restored.seen_envelopes, node.seen_envelopes)
+
+    def test_duplicate_gossip_envelope_is_processed_once(self) -> None:
+        node = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        envelope = GossipEnvelope(kind="sync-summary", origin="node-b", payload={"frontier": []}, ttl=4)
+
+        node.receive(envelope)
+        node.receive(envelope)
+
+        self.assertEqual(len(node.inbox), 1)
+        processed = node.process_inbox()
+        self.assertEqual(processed, 1)
+
+    def test_write_envelopes_does_not_overwrite_prior_batch(self) -> None:
+        node = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node.add_peer(PeerInfo(node_id="node-b", endpoint="local-spool"))
+        node.outbox.append(GossipEnvelope(kind="sync-summary", origin="node-a", payload={"frontier": []}))
+        with tempfile.TemporaryDirectory() as tmpdir:
+            first_written = node.write_envelopes(tmpdir)
+            node.outbox.append(GossipEnvelope(kind="sync-summary", origin="node-a", payload={"frontier": ["x"]}))
+            second_written = node.write_envelopes(tmpdir)
+            files = sorted((Path(tmpdir) / "node-b").glob("*.json"))
+        self.assertEqual(first_written, 1)
+        self.assertEqual(second_written, 1)
+        self.assertEqual(len(files), 2)
+
+    def test_reconciled_nodes_report_convergence(self) -> None:
+        producer = Wallet("producer-a", "producer-a-seed")
+        node_a = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_b = PoCTNode("node-b", chain=Blockchain(difficulty=1, allow_new_producers=True))
+
+        first = node_a.produce_block(producer.address)
+        second = node_a.produce_block(producer.address)
+        imported = node_b.reconcile_with_peer(node_a.handle_rpc)
+        comparison = node_b.compare_sync_summary(node_a.sync_summary())
+
+        self.assertIn(first.block_hash, node_b.chain.block_by_hash)
+        self.assertIn(second.block_hash, node_b.chain.block_by_hash)
+        self.assertGreaterEqual(len(imported), 1)
+        self.assertTrue(comparison["config_match"])
+        self.assertTrue(comparison["consensus_match"])
+        self.assertTrue(comparison["frontier_match"])
+        self.assertTrue(comparison["virtual_order_match"])
+        self.assertTrue(comparison["confirmed_order_match"])
+        self.assertTrue(node_b.has_converged_with_peer(node_a.sync_summary()))
+
+    def test_sync_summary_request_flow_fetches_missing_blocks(self) -> None:
+        producer = Wallet("producer-a", "producer-a-seed")
+        node_a = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_b = PoCTNode("node-b", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_a.add_peer(PeerInfo(node_id="node-b", endpoint="local-spool"))
+        node_b.add_peer(PeerInfo(node_id="node-a", endpoint="local-spool"))
+
+        block = node_a.produce_block(producer.address)
+        node_a.announce_sync_summary()
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            node_a.write_envelopes(tmpdir)
+            node_b.read_envelopes(tmpdir)
+            node_b.process_inbox()
+            node_b.write_envelopes(tmpdir)
+            node_a.read_envelopes(tmpdir)
+            node_a.process_inbox()
+            node_a.write_envelopes(tmpdir)
+            node_b.read_envelopes(tmpdir)
+            node_b.process_inbox()
+
+        self.assertIn(block.block_hash, node_b.chain.block_by_hash)
+        self.assertTrue(node_b.has_converged_with_peer(node_a.sync_summary()))
+
+    def test_three_node_block_broadcast_converges(self) -> None:
+        producer = Wallet("producer-a", "producer-a-seed")
+        node_a = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_b = PoCTNode("node-b", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_c = PoCTNode("node-c", chain=Blockchain(difficulty=1, allow_new_producers=True))
+
+        node_a.add_peer(PeerInfo(node_id="node-b", endpoint="local-spool"))
+        node_b.add_peer(PeerInfo(node_id="node-a", endpoint="local-spool"))
+        node_b.add_peer(PeerInfo(node_id="node-c", endpoint="local-spool"))
+        node_c.add_peer(PeerInfo(node_id="node-b", endpoint="local-spool"))
+
+        block = node_a.produce_block(producer.address)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            node_a.write_envelopes(tmpdir)
+            node_b.read_envelopes(tmpdir)
+            node_b.process_inbox()
+            node_b.write_envelopes(tmpdir)
+            node_c.read_envelopes(tmpdir)
+            node_c.process_inbox()
+
+        self.assertIn(block.block_hash, node_b.chain.block_by_hash)
+        self.assertIn(block.block_hash, node_c.chain.block_by_hash)
+        self.assertTrue(node_b.has_converged_with_peer(node_a.sync_summary()))
+        self.assertTrue(node_c.has_converged_with_peer(node_a.sync_summary()))
+
     def test_wallet_save_and_load_round_trip(self) -> None:
         wallet = Wallet.create("alice", seed="alice-seed")
         with tempfile.TemporaryDirectory() as tmpdir:

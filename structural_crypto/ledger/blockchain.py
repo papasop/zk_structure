@@ -150,6 +150,23 @@ class Blockchain:
     def export_state_json(self) -> str:
         return json.dumps(self.export_state(), sort_keys=True, separators=(",", ":"))
 
+    def state_digest(self) -> str:
+        return hashlib.sha256(self.export_state_json().encode("utf-8")).hexdigest()
+
+    def config_digest(self) -> str:
+        config_json = json.dumps(self.export_state()["config"], sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(config_json.encode("utf-8")).hexdigest()
+
+    def consensus_digest(self) -> str:
+        consensus_view = {
+            "block_hashes": sorted(self.block_by_hash.keys()),
+            "frontier": sorted(self.frontier),
+            "virtual_order": self.virtual_order(),
+            "confirmed_order": self.confirmed_order(),
+        }
+        encoded = json.dumps(consensus_view, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
     def save_state(self, path: str | Path) -> Path:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
