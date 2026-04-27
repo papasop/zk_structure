@@ -158,6 +158,14 @@ See:
 
 - [docs/POCT_L0_L1_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_L0_L1_SPEC.md)
 
+## PoCT L1 Interface
+
+The repository now also defines the first interface contract from the PoCT L0 legality-and-ordering layer to a future richer L1 execution layer.
+
+See:
+
+- [docs/POCT_L1_INTERFACE_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_L1_INTERFACE_SPEC.md)
+
 ## PoCT Persistence
 
 The current prototype now includes:
