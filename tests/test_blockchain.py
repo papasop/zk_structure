@@ -414,6 +414,51 @@ class BlockchainTests(unittest.TestCase):
         self.assertIn(a.address, totals)
         self.assertGreater(totals[a.address], 0.0)
 
+    def test_reward_amount_follows_emission_schedule(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            producer_reward=10,
+            emission_schedule=[
+                {"start_block": 1, "reward": 10},
+                {"start_block": 3, "reward": 5},
+                {"start_block": 5, "reward": 2},
+            ],
+            tail_reward_floor=1,
+        )
+        self.assertEqual(chain.reward_amount_for_block(1), 10)
+        self.assertEqual(chain.reward_amount_for_block(3), 5)
+        self.assertEqual(chain.reward_amount_for_block(5), 2)
+        self.assertEqual(chain.reward_amount_for_block(8), 2)
+
+    def test_confirmed_reward_uses_scheduled_reward_budget(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            producer_reward=10,
+            emission_schedule=[
+                {"start_block": 1, "reward": 10},
+                {"start_block": 2, "reward": 4},
+            ],
+            tail_reward_floor=1,
+            allow_new_producers=True,
+            confirmation_threshold=0.5,
+        )
+        a = Wallet("a", "a-seed")
+        b = Wallet("b", "b-seed")
+
+        chain._identity_state(a.address).phase = "mature"
+        chain._identity_state(a.address).compliant_txs = 30
+        chain._identity_state(b.address).phase = "mature"
+        chain._identity_state(b.address).compliant_txs = 30
+
+        first = chain.build_candidate_block(a.address, transactions=[], parents=[chain.blocks[-1].block_hash])
+        chain.accept_block(first)
+        second = chain.build_candidate_block(b.address, transactions=[], parents=[first.block_hash])
+        chain.accept_block(second)
+
+        reward = chain.confirmed_reward_for_block(first.block_hash)
+        self.assertGreater(reward, 0.0)
+        self.assertLessEqual(reward, 10.0)
+
     def test_confirmed_l1_batch_exports_confirmed_transactions(self) -> None:
         chain = Blockchain(
             difficulty=1,

@@ -28,6 +28,8 @@ class Blockchain:
         self,
         difficulty: int = 3,
         producer_reward: int = 25,
+        emission_schedule: Optional[List[dict]] = None,
+        tail_reward_floor: Optional[float] = None,
         rate_limit_window: int = 60,
         max_txs_per_window: int = 3,
         min_tx_gap: int = 1,
@@ -37,6 +39,12 @@ class Blockchain:
     ):
         self.difficulty = difficulty
         self.producer_reward = producer_reward
+        self.emission_schedule = self._normalize_emission_schedule(
+            emission_schedule or [{"start_block": 1, "reward": float(producer_reward)}]
+        )
+        self.tail_reward_floor = (
+            float(tail_reward_floor) if tail_reward_floor is not None else float(producer_reward)
+        )
         self.rate_limit_window = rate_limit_window
         self.max_txs_per_window = max_txs_per_window
         self.min_tx_gap = min_tx_gap
@@ -64,6 +72,8 @@ class Blockchain:
         chain = cls(
             difficulty=state["config"]["difficulty"],
             producer_reward=state["config"]["producer_reward"],
+            emission_schedule=state["config"].get("emission_schedule"),
+            tail_reward_floor=state["config"].get("tail_reward_floor"),
             rate_limit_window=state["config"]["rate_limit_window"],
             max_txs_per_window=state["config"]["max_txs_per_window"],
             min_tx_gap=state["config"]["min_tx_gap"],
@@ -104,6 +114,8 @@ class Blockchain:
             "config": {
                 "difficulty": self.difficulty,
                 "producer_reward": self.producer_reward,
+                "emission_schedule": self.emission_schedule,
+                "tail_reward_floor": self.tail_reward_floor,
                 "rate_limit_window": self.rate_limit_window,
                 "max_txs_per_window": self.max_txs_per_window,
                 "min_tx_gap": self.min_tx_gap,
@@ -697,7 +709,7 @@ class Blockchain:
         if block.producer_id == "GENESIS":
             return 0.0
         state = self._identity_state(block.producer_id)
-        return self.producer_reward * self.cold_start.reward_share(state)
+        return self.reward_amount_for_block(block.index) * self.cold_start.reward_share(state)
 
     def confirmed_reward_totals(self) -> Dict[str, float]:
         totals: Dict[str, float] = {}
@@ -738,6 +750,15 @@ class Blockchain:
             producer,
         )
 
+    def reward_amount_for_block(self, block_index: int) -> float:
+        reward = self.tail_reward_floor
+        for stage in self.emission_schedule:
+            if block_index >= stage["start_block"]:
+                reward = stage["reward"]
+            else:
+                break
+        return max(float(reward), float(self.tail_reward_floor))
+
     def _select_utxos(self, owner: str, amount: int) -> Tuple[List[TxInput], int]:
         selected: List[TxInput] = []
         running_total = 0
@@ -755,11 +776,12 @@ class Blockchain:
         key = StructurePrivateKey("producer-reward", "genesis-seed")
         genesis_policy = PolicyCommitment.from_values(epsilon=10.0)
         policy_hash = self._policy_hash(genesis_policy)
+        reward_amount = self.reward_amount_for_block(len(self.blocks))
         head_commitment = self._head_commitment("GENESIS", None, len(self.blocks))
         message = self._tx_message(
             sender="GENESIS",
             inputs=[],
-            outputs=[TxOutput(amount=self.producer_reward, recipient=producer_id)],
+            outputs=[TxOutput(amount=int(reward_amount), recipient=producer_id)],
             trajectory_id=None,
             prev=None,
             sequence=len(self.blocks),
@@ -778,13 +800,13 @@ class Blockchain:
             delta=0.0,
             sender_head_commitment=head_commitment,
             inputs=[],
-            outputs=[TxOutput(amount=self.producer_reward, recipient=producer_id)],
+            outputs=[TxOutput(amount=int(reward_amount), recipient=producer_id)],
             message=message,
             policy=genesis_policy,
             signature=key.sign(
                 message=message,
                 policy=genesis_policy,
-                amount=self.producer_reward,
+                amount=int(reward_amount),
                 recipients=[producer_id],
             ),
             timestamp=timestamp,
@@ -1170,6 +1192,19 @@ class Blockchain:
         return hashlib.sha256(
             json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
         ).hexdigest()
+
+    @staticmethod
+    def _normalize_emission_schedule(emission_schedule: List[dict]) -> List[dict]:
+        normalized = []
+        for stage in emission_schedule:
+            normalized.append(
+                {
+                    "start_block": int(stage["start_block"]),
+                    "reward": float(stage["reward"]),
+                }
+            )
+        normalized.sort(key=lambda item: item["start_block"])
+        return normalized
 
     @staticmethod
     def _trajectory_id_for(sender: str) -> str:
