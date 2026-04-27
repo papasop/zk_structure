@@ -66,10 +66,20 @@ class SenderTrajectoryState:
 @dataclass(frozen=True)
 class Block:
     index: int
-    prev_hash: str
+    parents: List[str]
     timestamp: int
     nonce: int
     difficulty: int
+    producer_id: str
+    producer_phase: str
+    producer_ordering_score: float
+    aggregate_delta: float
+    trajectory_commitment: str
+    virtual_order_hint: str
     transactions: List[Transaction]
     merkle_root: str
     block_hash: str
+
+    @property
+    def prev_hash(self) -> str:
+        return self.parents[0] if self.parents else "0" * 64

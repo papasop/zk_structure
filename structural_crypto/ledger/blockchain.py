@@ -37,6 +37,8 @@ class Blockchain:
         self.allow_probationary_producers = allow_probationary_producers
         self.allow_new_producers = allow_new_producers
         self.blocks: List[Block] = []
+        self.block_by_hash: Dict[str, Block] = {}
+        self.frontier: List[str] = []
         self.mempool: List[Transaction] = []
         self.utxos: Dict[Tuple[str, int], TxOutput] = {}
         self.sender_states: Dict[str, SenderTrajectoryState] = {}
@@ -47,15 +49,23 @@ class Blockchain:
     def _create_genesis_block(self) -> None:
         block = Block(
             index=0,
-            prev_hash="0" * 64,
+            parents=[],
             timestamp=int(time.time()),
             nonce=0,
             difficulty=self.difficulty,
+            producer_id="GENESIS",
+            producer_phase="mature",
+            producer_ordering_score=1.0,
+            aggregate_delta=0.0,
+            trajectory_commitment=self._head_commitment("GENESIS", None, 0),
+            virtual_order_hint="genesis",
             transactions=[],
             merkle_root=self._merkle_root([]),
             block_hash="0" * 64,
         )
         self.blocks.append(block)
+        self.block_by_hash[block.block_hash] = block
+        self.frontier = [block.block_hash]
 
     def faucet(self, recipient: str, amount: int) -> Transaction:
         genesis_policy = PolicyCommitment.from_values(epsilon=10.0)
@@ -112,6 +122,7 @@ class Blockchain:
             transactions=genesis_transactions,
             merkle_root=self._merkle_root(genesis_transactions),
         )
+        self.block_by_hash[self.blocks[0].block_hash] = self.blocks[0]
         return tx
 
     def build_transaction(
@@ -258,7 +269,7 @@ class Blockchain:
             raise ValidationError("producer is not eligible to mine blocks")
         reward_tx = self._build_reward_transaction(miner_address)
         transactions = [*self.mempool, reward_tx]
-        block = self._build_block(transactions)
+        block = self._build_block(transactions, miner_address)
         self._apply_block(block)
         self.mempool.clear()
         return block
@@ -269,16 +280,36 @@ class Blockchain:
         previous_hash = "0" * 64
         for index, block in enumerate(self.blocks):
             if index == 0:
+                if block.parents:
+                    return False
                 for tx in block.transactions:
                     for output_index, output in enumerate(tx.outputs):
                         temp_utxos[(tx.txid, output_index)] = output
                 previous_hash = block.block_hash
                 continue
+            if not block.parents:
+                return False
             if block.prev_hash != previous_hash:
                 return False
+            for parent in block.parents:
+                if parent not in self.block_by_hash and parent != previous_hash:
+                    return False
             if not block.block_hash.startswith("0" * block.difficulty):
                 return False
-            if self._hash_block_payload(block.index, block.prev_hash, block.timestamp, block.nonce, block.transactions, block.merkle_root) != block.block_hash:
+            if self._hash_block_payload(
+                block.index,
+                block.parents,
+                block.timestamp,
+                block.nonce,
+                block.producer_id,
+                block.producer_phase,
+                block.producer_ordering_score,
+                block.aggregate_delta,
+                block.trajectory_commitment,
+                block.virtual_order_hint,
+                block.transactions,
+                block.merkle_root,
+            ) != block.block_hash:
                 return False
             for tx in block.transactions:
                 if tx.sender != "GENESIS":
@@ -320,7 +351,9 @@ class Blockchain:
             {
                 "index": block.index,
                 "hash": block.block_hash,
+                "parents": block.parents,
                 "prev_hash": block.prev_hash,
+                "producer_id": block.producer_id,
                 "transactions": [tx.txid for tx in block.transactions],
             }
             for block in self.blocks
@@ -420,23 +453,46 @@ class Blockchain:
             timestamp=timestamp,
         )
 
-    def _build_block(self, transactions: List[Transaction]) -> Block:
-        prev_hash = self.blocks[-1].block_hash
+    def _build_block(self, transactions: List[Transaction], producer_id: str) -> Block:
+        parents = self._select_block_parents(producer_id)
         index = len(self.blocks)
         timestamp = int(time.time())
         merkle_root = self._merkle_root(transactions)
+        identity_state = self._identity_state(producer_id)
+        producer_phase = identity_state.phase
+        producer_ordering_score = self.cold_start.ordering_score(identity_state)
+        aggregate_delta = self._aggregate_delta(transactions)
+        trajectory_commitment = self._producer_trajectory_commitment(producer_id)
+        virtual_order_hint = self._virtual_order_hint(producer_id, producer_ordering_score, timestamp)
         nonce = 0
         while True:
             block_hash = self._hash_block_payload(
-                index, prev_hash, timestamp, nonce, transactions, merkle_root
+                index,
+                parents,
+                timestamp,
+                nonce,
+                producer_id,
+                producer_phase,
+                producer_ordering_score,
+                aggregate_delta,
+                trajectory_commitment,
+                virtual_order_hint,
+                transactions,
+                merkle_root,
             )
             if block_hash.startswith("0" * self.difficulty):
                 return Block(
                     index=index,
-                    prev_hash=prev_hash,
+                    parents=parents,
                     timestamp=timestamp,
                     nonce=nonce,
                     difficulty=self.difficulty,
+                    producer_id=producer_id,
+                    producer_phase=producer_phase,
+                    producer_ordering_score=producer_ordering_score,
+                    aggregate_delta=aggregate_delta,
+                    trajectory_commitment=trajectory_commitment,
+                    virtual_order_hint=virtual_order_hint,
                     transactions=transactions,
                     merkle_root=merkle_root,
                     block_hash=block_hash,
@@ -448,6 +504,10 @@ class Blockchain:
             self._apply_transaction(tx)
         self._apply_transaction(block.transactions[-1])
         self.blocks.append(block)
+        self.block_by_hash[block.block_hash] = block
+        if block.prev_hash in self.frontier:
+            self.frontier.remove(block.prev_hash)
+        self.frontier.append(block.block_hash)
 
     def _apply_transaction(self, tx: Transaction) -> None:
         for tx_input in tx.inputs:
@@ -520,18 +580,30 @@ class Blockchain:
     def _hash_block_payload(
         self,
         index: int,
-        prev_hash: str,
+        parents: List[str],
         timestamp: int,
         nonce: int,
+        producer_id: str,
+        producer_phase: str,
+        producer_ordering_score: float,
+        aggregate_delta: float,
+        trajectory_commitment: str,
+        virtual_order_hint: str,
         transactions: List[Transaction],
         merkle_root: str,
     ) -> str:
         payload = {
             "index": index,
-            "prev_hash": prev_hash,
+            "parents": parents,
             "timestamp": timestamp,
             "nonce": nonce,
             "difficulty": self.difficulty,
+            "producer_id": producer_id,
+            "producer_phase": producer_phase,
+            "producer_ordering_score": producer_ordering_score,
+            "aggregate_delta": aggregate_delta,
+            "trajectory_commitment": trajectory_commitment,
+            "virtual_order_hint": virtual_order_hint,
             "txids": [tx.txid for tx in transactions],
             "merkle_root": merkle_root,
         }
@@ -635,6 +707,29 @@ class Blockchain:
     def _trim_epochs(self, epochs: List[int], current_epoch: int) -> List[int]:
         cutoff = current_epoch - self.rate_limit_window
         return [epoch for epoch in epochs if epoch >= cutoff]
+
+    def _select_block_parents(self, producer_id: str) -> List[str]:
+        main_parent = self.blocks[-1].block_hash
+        extra_parents = sorted(parent for parent in self.frontier if parent != main_parent)
+        # Keep the first version conservative: one main parent plus a small merge set.
+        return [main_parent, *extra_parents[:2]]
+
+    @staticmethod
+    def _aggregate_delta(transactions: List[Transaction]) -> float:
+        non_genesis = [tx.delta for tx in transactions if tx.sender != "GENESIS"]
+        if not non_genesis:
+            return 0.0
+        return sum(non_genesis) / len(non_genesis)
+
+    def _producer_trajectory_commitment(self, producer_id: str) -> str:
+        state = self.sender_states.get(producer_id, SenderTrajectoryState(sender=producer_id))
+        return self._head_commitment(producer_id, state.head_txid, state.sequence)
+
+    @staticmethod
+    def _virtual_order_hint(producer_id: str, ordering_score: float, timestamp: int) -> str:
+        return hashlib.sha256(
+            f"{producer_id}|{ordering_score:.12f}|{timestamp}".encode("utf-8")
+        ).hexdigest()
 
     @staticmethod
     def _phase_rank(phase: str) -> int:

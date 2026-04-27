@@ -195,6 +195,9 @@ class BlockchainTests(unittest.TestCase):
         block = chain.mine_block(miner.address)
 
         self.assertEqual(block.index, 1)
+        self.assertGreaterEqual(len(block.parents), 1)
+        self.assertEqual(block.producer_id, miner.address)
+        self.assertIn(block.producer_phase, {"new", "probation", "mature", "penalized"})
 
     def test_producer_priority_prefers_mature_over_new(self) -> None:
         chain = Blockchain(difficulty=1, mining_reward=5)
@@ -235,6 +238,31 @@ class BlockchainTests(unittest.TestCase):
             chain.producer_priority(a.address, proposed_timestamp=100),
             chain.producer_priority(b.address, proposed_timestamp=100),
         )
+
+    def test_chain_summary_exposes_dag_parents(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+        )
+        alice = Wallet("alice", "alice-seed")
+        bob = Wallet("bob", "bob-seed")
+        miner = Wallet("miner", "miner-seed")
+        chain.faucet(alice.address, 50)
+        policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
+
+        tx = chain.build_transaction(
+            key=alice.key,
+            recipients=[(bob.address, 10)],
+            policy=policy,
+            timestamp=100,
+        )
+        chain.add_transaction(tx, signer_seed=alice.seed)
+        chain.mine_block(miner.address)
+
+        summary = chain.chain_summary()
+        self.assertIn("parents", summary[1])
+        self.assertIsInstance(summary[1]["parents"], list)
 
 
 if __name__ == "__main__":
