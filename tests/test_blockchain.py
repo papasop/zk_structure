@@ -536,6 +536,7 @@ class BlockchainTests(unittest.TestCase):
         payload = chain.export_state_json()
         self.assertIsInstance(payload, str)
         self.assertIn("\"blocks\"", payload)
+        self.assertIn("\"schema_version\":1", payload)
 
     def test_save_and_load_state_file_roundtrip(self) -> None:
         chain = Blockchain(
@@ -569,6 +570,21 @@ class BlockchainTests(unittest.TestCase):
     def test_default_state_path_uses_poct_dir(self) -> None:
         path = Blockchain.default_state_path()
         self.assertEqual(path, Path(".poct") / "chain_state.json")
+
+    def test_from_state_rejects_wrong_schema_version(self) -> None:
+        chain = Blockchain(difficulty=1, producer_reward=5, allow_new_producers=True)
+        state = chain.export_state()
+        state["schema_version"] = 999
+        with self.assertRaises(ValidationError):
+            Blockchain.from_state(state)
+
+    def test_save_state_writes_final_file_atomically(self) -> None:
+        chain = Blockchain(difficulty=1, producer_reward=5, allow_new_producers=True)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "chain.json"
+            chain.save_state(path)
+            self.assertTrue(path.exists())
+            self.assertFalse((Path(tmpdir) / "chain.json.tmp").exists())
 
     def test_cli_save_and_load(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

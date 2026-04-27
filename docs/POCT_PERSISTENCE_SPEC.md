@@ -111,6 +111,14 @@ Cold-start / maturity state such as:
 - external credential score
 - phase
 
+### 8. `schema_version`
+
+The current persistence schema version.
+
+Current value:
+
+- `1`
+
 ## Serialization Interface
 
 The current code exposes:
@@ -131,6 +139,11 @@ The current file format is a single JSON file.
 Default path:
 
 - `.poct/chain_state.json`
+
+Writes currently use:
+
+- temporary file write
+- atomic replace into the final target path
 
 This is intended for:
 
@@ -185,9 +198,12 @@ Known limitations:
 - single-file rewrite model
 - no incremental append log
 - no snapshot pruning
-- no schema versioning field yet
-- no crash-safe atomic rename flow yet
 - no content-addressed persistence
+
+The following are now present in the current prototype:
+
+- schema version field
+- atomic replace for file save
 
 These are acceptable at the prototype stage.
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import time
 from dataclasses import asdict
@@ -21,6 +22,8 @@ class ValidationError(ValueError):
 
 
 class Blockchain:
+    SCHEMA_VERSION = 1
+
     def __init__(
         self,
         difficulty: int = 3,
@@ -53,6 +56,11 @@ class Blockchain:
 
     @classmethod
     def from_state(cls, state: dict) -> "Blockchain":
+        schema_version = state.get("schema_version")
+        if schema_version != cls.SCHEMA_VERSION:
+            raise ValidationError(
+                f"unsupported state schema version: {schema_version!r}, expected {cls.SCHEMA_VERSION}"
+            )
         chain = cls(
             difficulty=state["config"]["difficulty"],
             producer_reward=state["config"]["producer_reward"],
@@ -92,6 +100,7 @@ class Blockchain:
 
     def export_state(self) -> dict:
         return {
+            "schema_version": self.SCHEMA_VERSION,
             "config": {
                 "difficulty": self.difficulty,
                 "producer_reward": self.producer_reward,
@@ -132,7 +141,9 @@ class Blockchain:
     def save_state(self, path: str | Path) -> Path:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(self.export_state_json(), encoding="utf-8")
+        temp_target = target.with_name(f"{target.name}.tmp")
+        temp_target.write_text(self.export_state_json(), encoding="utf-8")
+        os.replace(temp_target, target)
         return target
 
     @classmethod
