@@ -87,6 +87,34 @@ class NodeL1ZKTests(unittest.TestCase):
         self.assertIn(block.block_hash, node_b.chain.block_by_hash)
         self.assertEqual(node_b.chain.frontier, node_a.chain.frontier)
 
+    def test_fetch_missing_block_via_rpc_imports_parent_chain(self) -> None:
+        producer = Wallet("producer-a", "producer-a-seed")
+        node_a = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_b = PoCTNode("node-b", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_a.chain._identity_state(producer.address).phase = "mature"
+        node_a.chain._identity_state(producer.address).compliant_txs = 30
+
+        block_1 = node_a.produce_block(producer.address)
+        block_2 = node_a.produce_block(producer.address)
+        fetched = node_b.fetch_missing_block_via_rpc(node_a.handle_rpc, block_2.block_hash)
+
+        self.assertEqual(fetched, block_2.block_hash)
+        self.assertIn(block_1.block_hash, node_b.chain.block_by_hash)
+        self.assertIn(block_2.block_hash, node_b.chain.block_by_hash)
+
+    def test_reconcile_with_peer_uses_sync_summary_and_rpc(self) -> None:
+        producer = Wallet("producer-a", "producer-a-seed")
+        node_a = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_b = PoCTNode("node-b", chain=Blockchain(difficulty=1, allow_new_producers=True))
+        node_a.chain._identity_state(producer.address).phase = "mature"
+        node_a.chain._identity_state(producer.address).compliant_txs = 30
+
+        block = node_a.produce_block(producer.address)
+        imported = node_b.reconcile_with_peer(node_a.handle_rpc)
+
+        self.assertIn(block.block_hash, imported)
+        self.assertEqual(node_b.chain.frontier, node_a.chain.frontier)
+
     def test_file_spool_gossip_transfers_block(self) -> None:
         producer = Wallet("producer-a", "producer-a-seed")
         node_a = PoCTNode("node-a", chain=Blockchain(difficulty=1, allow_new_producers=True))

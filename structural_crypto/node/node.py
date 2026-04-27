@@ -170,6 +170,33 @@ class PoCTNode:
             imported.append(block_hash)
         return imported
 
+    def fetch_missing_block_via_rpc(self, rpc_handler, block_hash: str) -> str | None:
+        if block_hash in self.chain.block_by_hash:
+            return block_hash
+        response = rpc_handler(RPCRequest(method="get_block", params={"block_hash": block_hash}))
+        if not response.ok:
+            return None
+        block_data = response.result["block"]
+        for parent_hash in block_data["parents"]:
+            if parent_hash not in self.chain.block_by_hash:
+                fetched_parent = self.fetch_missing_block_via_rpc(rpc_handler, parent_hash)
+                if fetched_parent is None:
+                    return None
+        self.import_block(block_data)
+        return block_hash
+
+    def reconcile_with_peer(self, rpc_handler) -> List[str]:
+        response = rpc_handler(RPCRequest(method="get_sync_summary"))
+        if not response.ok:
+            return []
+        missing = self.sync_frontier_from_peer(response.result)
+        imported: List[str] = []
+        for block_hash in missing:
+            fetched = self.fetch_missing_block_via_rpc(rpc_handler, block_hash)
+            if fetched is not None:
+                imported.append(fetched)
+        return imported
+
     def _handle_envelope(self, envelope: GossipEnvelope) -> None:
         if envelope.kind == "block" and "block" in envelope.payload:
             self.import_block(envelope.payload["block"])
