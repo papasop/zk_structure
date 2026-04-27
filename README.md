@@ -101,3 +101,15 @@ The concrete next protocol step is the trajectory validity layer:
 See:
 
 - [docs/POCT_TRAJECTORY_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_TRAJECTORY_SPEC.md)
+
+## PoCT Producer Model
+
+The current recommended producer path is Model A:
+
+- everyone may submit transactions
+- mature identities should dominate producer influence
+- producer power comes from compliant trajectory history
+
+See:
+
+- [docs/POCT_BLOCK_PRODUCER_SPEC.md](/Users/bai/Documents/New%20project/zk_structure/docs/POCT_BLOCK_PRODUCER_SPEC.md)
