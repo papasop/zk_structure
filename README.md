@@ -7,7 +7,7 @@ A minimal policy-enforced UTXO blockchain evolving from the original Structural 
 The repository now separates three layers:
 
 - `structural_crypto.crypto`: structure functions, policy commitments, and structure-bound signing.
-- `structural_crypto.ledger`: transactions, UTXOs, blocks, proof-of-work mining, and chain validation.
+- `structural_crypto.ledger`: transactions, UTXOs, PoCT DAG blocks, producer-based block formation, and chain validation.
 - `structural_crypto.app`: a tiny CLI and an end-to-end demo.
 - `structural_crypto.consensus`: PoCT cold-start and identity maturation helpers.
 

@@ -10,12 +10,12 @@ from structural_crypto.node.wallet import Wallet
 def build_demo_chain() -> Blockchain:
     chain = Blockchain(
         difficulty=2,
-        mining_reward=10,
+        producer_reward=10,
         allow_new_producers=True,
     )
     alice = Wallet(name="alice", seed="alice-seed")
     bob = Wallet(name="bob", seed="bob-seed")
-    miner = Wallet(name="miner", seed="miner-seed")
+    producer = Wallet(name="producer", seed="producer-seed")
 
     chain.faucet(alice.address, 100)
 
@@ -30,7 +30,7 @@ def build_demo_chain() -> Blockchain:
         policy=policy,
     )
     chain.add_transaction(tx, signer_seed=alice.seed)
-    chain.mine_block(miner.address)
+    chain.produce_block(producer.address)
     return chain
 
 

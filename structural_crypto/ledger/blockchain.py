@@ -24,7 +24,7 @@ class Blockchain:
     def __init__(
         self,
         difficulty: int = 3,
-        mining_reward: int = 25,
+        producer_reward: int = 25,
         rate_limit_window: int = 60,
         max_txs_per_window: int = 3,
         min_tx_gap: int = 1,
@@ -33,7 +33,7 @@ class Blockchain:
         confirmation_threshold: float = 1.5,
     ):
         self.difficulty = difficulty
-        self.mining_reward = mining_reward
+        self.producer_reward = producer_reward
         self.rate_limit_window = rate_limit_window
         self.max_txs_per_window = max_txs_per_window
         self.min_tx_gap = min_tx_gap
@@ -55,7 +55,7 @@ class Blockchain:
     def from_state(cls, state: dict) -> "Blockchain":
         chain = cls(
             difficulty=state["config"]["difficulty"],
-            mining_reward=state["config"]["mining_reward"],
+            producer_reward=state["config"]["producer_reward"],
             rate_limit_window=state["config"]["rate_limit_window"],
             max_txs_per_window=state["config"]["max_txs_per_window"],
             min_tx_gap=state["config"]["min_tx_gap"],
@@ -94,7 +94,7 @@ class Blockchain:
         return {
             "config": {
                 "difficulty": self.difficulty,
-                "mining_reward": self.mining_reward,
+                "producer_reward": self.producer_reward,
                 "rate_limit_window": self.rate_limit_window,
                 "max_txs_per_window": self.max_txs_per_window,
                 "min_tx_gap": self.min_tx_gap,
@@ -364,15 +364,19 @@ class Blockchain:
         if tx.sender != "GENESIS":
             self._validate_trajectory(tx)
 
-    def mine_block(self, miner_address: str) -> Block:
-        if not self.producer_is_eligible(miner_address):
-            raise ValidationError("producer is not eligible to mine blocks")
-        reward_tx = self._build_reward_transaction(miner_address)
+    def produce_block(self, producer_id: str) -> Block:
+        if not self.producer_is_eligible(producer_id):
+            raise ValidationError("producer is not eligible to produce blocks")
+        reward_tx = self._build_reward_transaction(producer_id)
         transactions = [*self.mempool, reward_tx]
-        block = self._build_block(transactions, miner_address)
+        block = self._build_block(transactions, producer_id)
         self._apply_block(block)
         self.mempool.clear()
         return block
+
+    def mine_block(self, miner_address: str) -> Block:
+        """Backward-compatible alias for the old PoW-flavored name."""
+        return self.produce_block(miner_address)
 
     def build_candidate_block(
         self,
@@ -596,7 +600,7 @@ class Blockchain:
         if block.producer_id == "GENESIS":
             return 0.0
         state = self._identity_state(block.producer_id)
-        return self.mining_reward * self.cold_start.reward_share(state)
+        return self.producer_reward * self.cold_start.reward_share(state)
 
     def confirmed_reward_totals(self) -> Dict[str, float]:
         totals: Dict[str, float] = {}
@@ -649,16 +653,16 @@ class Blockchain:
                 return selected, running_total
         raise ValidationError(f"insufficient balance for {owner}")
 
-    def _build_reward_transaction(self, miner_address: str) -> Transaction:
+    def _build_reward_transaction(self, producer_id: str) -> Transaction:
         timestamp = int(time.time())
-        key = StructurePrivateKey("miner-reward", "genesis-seed")
+        key = StructurePrivateKey("producer-reward", "genesis-seed")
         genesis_policy = PolicyCommitment.from_values(epsilon=10.0)
         policy_hash = self._policy_hash(genesis_policy)
         head_commitment = self._head_commitment("GENESIS", None, len(self.blocks))
         message = self._tx_message(
             sender="GENESIS",
             inputs=[],
-            outputs=[TxOutput(amount=self.mining_reward, recipient=miner_address)],
+            outputs=[TxOutput(amount=self.producer_reward, recipient=producer_id)],
             trajectory_id=None,
             prev=None,
             sequence=len(self.blocks),
@@ -667,7 +671,7 @@ class Blockchain:
             sender_head_commitment=head_commitment,
         )
         return Transaction(
-            txid=self._hash_json({"type": "reward", "miner": miner_address, "height": len(self.blocks)}),
+            txid=self._hash_json({"type": "reward", "producer": producer_id, "height": len(self.blocks)}),
             sender="GENESIS",
             trajectory_id=None,
             prev=None,
@@ -677,14 +681,14 @@ class Blockchain:
             delta=0.0,
             sender_head_commitment=head_commitment,
             inputs=[],
-            outputs=[TxOutput(amount=self.mining_reward, recipient=miner_address)],
+            outputs=[TxOutput(amount=self.producer_reward, recipient=producer_id)],
             message=message,
             policy=genesis_policy,
             signature=key.sign(
                 message=message,
                 policy=genesis_policy,
-                amount=self.mining_reward,
-                recipients=[miner_address],
+                amount=self.producer_reward,
+                recipients=[producer_id],
             ),
             timestamp=timestamp,
         )

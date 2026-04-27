@@ -24,7 +24,7 @@ class BlockchainTests(unittest.TestCase):
         self.assertGreater(len(result["trajectories"]), 0)
 
     def test_policy_rejects_invalid_recipient(self) -> None:
-        chain = Blockchain(difficulty=1, mining_reward=5)
+        chain = Blockchain(difficulty=1, producer_reward=5)
         alice = Wallet("alice", "alice-seed")
         bob = Wallet("bob", "bob-seed")
         mallory = Wallet("mallory", "mallory-seed")
@@ -43,7 +43,7 @@ class BlockchainTests(unittest.TestCase):
             )
 
     def test_insufficient_balance_is_rejected(self) -> None:
-        chain = Blockchain(difficulty=1, mining_reward=5)
+        chain = Blockchain(difficulty=1, producer_reward=5)
         alice = Wallet("alice", "alice-seed")
         bob = Wallet("bob", "bob-seed")
         chain.faucet(alice.address, 10)
@@ -56,7 +56,7 @@ class BlockchainTests(unittest.TestCase):
             )
 
     def test_first_transaction_starts_new_trajectory(self) -> None:
-        chain = Blockchain(difficulty=1, mining_reward=5)
+        chain = Blockchain(difficulty=1, producer_reward=5)
         alice = Wallet("alice", "alice-seed")
         bob = Wallet("bob", "bob-seed")
         chain.faucet(alice.address, 50)
@@ -77,7 +77,7 @@ class BlockchainTests(unittest.TestCase):
     def test_next_transaction_extends_existing_trajectory(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
         )
         alice = Wallet("alice", "alice-seed")
@@ -92,7 +92,7 @@ class BlockchainTests(unittest.TestCase):
             timestamp=100,
         )
         chain.add_transaction(tx1, signer_seed=alice.seed)
-        chain.mine_block(bob.address)
+        chain.produce_block(bob.address)
 
         tx2 = chain.build_transaction(
             key=alice.key,
@@ -106,7 +106,7 @@ class BlockchainTests(unittest.TestCase):
         self.assertEqual(tx2.trajectory_id, tx1.trajectory_id)
 
     def test_branch_conflict_is_rejected(self) -> None:
-        chain = Blockchain(difficulty=1, mining_reward=5)
+        chain = Blockchain(difficulty=1, producer_reward=5)
         alice = Wallet("alice", "alice-seed")
         bob = Wallet("bob", "bob-seed")
         chain.faucet(alice.address, 50)
@@ -130,7 +130,7 @@ class BlockchainTests(unittest.TestCase):
     def test_rate_limit_is_rejected(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             rate_limit_window=10,
             max_txs_per_window=1,
             min_tx_gap=0,
@@ -148,7 +148,7 @@ class BlockchainTests(unittest.TestCase):
             timestamp=100,
         )
         chain.add_transaction(tx1, signer_seed=alice.seed)
-        chain.mine_block(bob.address)
+        chain.produce_block(bob.address)
 
         with self.assertRaises(ValidationError):
             chain.build_transaction(
@@ -159,10 +159,10 @@ class BlockchainTests(unittest.TestCase):
             )
 
     def test_new_producer_is_rejected_by_default(self) -> None:
-        chain = Blockchain(difficulty=1, mining_reward=5)
+        chain = Blockchain(difficulty=1, producer_reward=5)
         alice = Wallet("alice", "alice-seed")
         bob = Wallet("bob", "bob-seed")
-        miner = Wallet("miner", "miner-seed")
+        producer = Wallet("producer", "producer-seed")
         chain.faucet(alice.address, 50)
         policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
 
@@ -175,17 +175,17 @@ class BlockchainTests(unittest.TestCase):
         chain.add_transaction(tx, signer_seed=alice.seed)
 
         with self.assertRaises(ValidationError):
-            chain.mine_block(miner.address)
+            chain.produce_block(producer.address)
 
     def test_new_producer_can_mine_with_override(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
         )
         alice = Wallet("alice", "alice-seed")
         bob = Wallet("bob", "bob-seed")
-        miner = Wallet("miner", "miner-seed")
+        producer = Wallet("producer", "producer-seed")
         chain.faucet(alice.address, 50)
         policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
 
@@ -196,15 +196,15 @@ class BlockchainTests(unittest.TestCase):
             timestamp=100,
         )
         chain.add_transaction(tx, signer_seed=alice.seed)
-        block = chain.mine_block(miner.address)
+        block = chain.produce_block(producer.address)
 
         self.assertEqual(block.index, 1)
         self.assertGreaterEqual(len(block.parents), 1)
-        self.assertEqual(block.producer_id, miner.address)
+        self.assertEqual(block.producer_id, producer.address)
         self.assertIn(block.producer_phase, {"new", "probation", "mature", "penalized"})
 
     def test_producer_priority_prefers_mature_over_new(self) -> None:
-        chain = Blockchain(difficulty=1, mining_reward=5)
+        chain = Blockchain(difficulty=1, producer_reward=5)
         mature = Wallet("mature", "mature-seed")
         new = Wallet("newbie", "newbie-seed")
 
@@ -224,7 +224,7 @@ class BlockchainTests(unittest.TestCase):
         )
 
     def test_producer_priority_uses_delta_as_tiebreak(self) -> None:
-        chain = Blockchain(difficulty=1, mining_reward=5)
+        chain = Blockchain(difficulty=1, producer_reward=5)
         a = Wallet("a", "a-seed")
         b = Wallet("b", "b-seed")
 
@@ -246,12 +246,12 @@ class BlockchainTests(unittest.TestCase):
     def test_chain_summary_exposes_dag_parents(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
         )
         alice = Wallet("alice", "alice-seed")
         bob = Wallet("bob", "bob-seed")
-        miner = Wallet("miner", "miner-seed")
+        producer = Wallet("producer", "producer-seed")
         chain.faucet(alice.address, 50)
         policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
 
@@ -262,7 +262,7 @@ class BlockchainTests(unittest.TestCase):
             timestamp=100,
         )
         chain.add_transaction(tx, signer_seed=alice.seed)
-        chain.mine_block(miner.address)
+        chain.produce_block(producer.address)
 
         summary = chain.chain_summary()
         self.assertIn("parents", summary[1])
@@ -271,7 +271,7 @@ class BlockchainTests(unittest.TestCase):
     def test_virtual_order_supports_parallel_blocks(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
         )
         a = Wallet("a", "a-seed")
@@ -300,7 +300,7 @@ class BlockchainTests(unittest.TestCase):
     def test_frontier_tracks_parallel_children(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
         )
         a = Wallet("a", "a-seed")
@@ -322,7 +322,7 @@ class BlockchainTests(unittest.TestCase):
     def test_block_is_not_confirmed_without_successors(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
             confirmation_threshold=1.0,
         )
@@ -338,7 +338,7 @@ class BlockchainTests(unittest.TestCase):
     def test_block_becomes_confirmed_with_weighted_successors(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
             confirmation_threshold=0.5,
         )
@@ -368,7 +368,7 @@ class BlockchainTests(unittest.TestCase):
     def test_unconfirmed_block_has_zero_reward(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
             confirmation_threshold=1.0,
         )
@@ -387,7 +387,7 @@ class BlockchainTests(unittest.TestCase):
     def test_confirmed_reward_totals_credit_producer(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
             confirmation_threshold=0.5,
         )
@@ -417,7 +417,7 @@ class BlockchainTests(unittest.TestCase):
     def test_virtual_order_rejects_parallel_double_spend(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
         )
         alice = Wallet("alice", "alice-seed")
@@ -465,7 +465,7 @@ class BlockchainTests(unittest.TestCase):
     def test_virtual_resolution_rejects_same_sender_sequence_conflict(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
         )
         alice = Wallet("alice", "alice-seed")
@@ -503,13 +503,13 @@ class BlockchainTests(unittest.TestCase):
     def test_blockchain_state_roundtrip_preserves_views(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
             confirmation_threshold=0.5,
         )
         alice = Wallet("alice", "alice-seed")
         bob = Wallet("bob", "bob-seed")
-        miner = Wallet("miner", "miner-seed")
+        producer = Wallet("producer", "producer-seed")
         chain.faucet(alice.address, 50)
         policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
 
@@ -520,7 +520,7 @@ class BlockchainTests(unittest.TestCase):
             timestamp=100,
         )
         chain.add_transaction(tx, signer_seed=alice.seed)
-        chain.mine_block(miner.address)
+        chain.produce_block(producer.address)
 
         exported = chain.export_state()
         restored = Blockchain.from_state(exported)
@@ -532,7 +532,7 @@ class BlockchainTests(unittest.TestCase):
         self.assertEqual(restored.trajectory_summary(), chain.trajectory_summary())
 
     def test_export_state_json_is_stable_json(self) -> None:
-        chain = Blockchain(difficulty=1, mining_reward=5, allow_new_producers=True)
+        chain = Blockchain(difficulty=1, producer_reward=5, allow_new_producers=True)
         payload = chain.export_state_json()
         self.assertIsInstance(payload, str)
         self.assertIn("\"blocks\"", payload)
@@ -540,12 +540,12 @@ class BlockchainTests(unittest.TestCase):
     def test_save_and_load_state_file_roundtrip(self) -> None:
         chain = Blockchain(
             difficulty=1,
-            mining_reward=5,
+            producer_reward=5,
             allow_new_producers=True,
         )
         alice = Wallet("alice", "alice-seed")
         bob = Wallet("bob", "bob-seed")
-        miner = Wallet("miner", "miner-seed")
+        producer = Wallet("producer", "producer-seed")
         chain.faucet(alice.address, 50)
         policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
 
@@ -556,7 +556,7 @@ class BlockchainTests(unittest.TestCase):
             timestamp=100,
         )
         chain.add_transaction(tx, signer_seed=alice.seed)
-        chain.mine_block(miner.address)
+        chain.produce_block(producer.address)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             path = chain.save_state(Path(tmpdir) / "chain_state.json")
