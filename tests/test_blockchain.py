@@ -315,6 +315,52 @@ class BlockchainTests(unittest.TestCase):
         self.assertIn(block_b.block_hash, chain.frontier)
         self.assertNotIn(parent, chain.frontier)
 
+    def test_block_is_not_confirmed_without_successors(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+            confirmation_threshold=1.0,
+        )
+        a = Wallet("a", "a-seed")
+        chain._identity_state(a.address).phase = "mature"
+        parent = chain.blocks[-1].block_hash
+        block = chain.build_candidate_block(a.address, transactions=[], parents=[parent])
+        chain.accept_block(block)
+
+        self.assertFalse(chain.is_confirmed(block.block_hash))
+        self.assertEqual(chain.confirmation_score(block.block_hash), 0.0)
+
+    def test_block_becomes_confirmed_with_weighted_successors(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+            confirmation_threshold=0.5,
+        )
+        a = Wallet("a", "a-seed")
+        b = Wallet("b", "b-seed")
+
+        a_state = chain._identity_state(a.address)
+        a_state.phase = "mature"
+        a_state.compliant_txs = 30
+        a_state.average_delta = 0.1
+
+        b_state = chain._identity_state(b.address)
+        b_state.phase = "mature"
+        b_state.compliant_txs = 30
+        b_state.average_delta = 0.1
+
+        parent = chain.blocks[-1].block_hash
+        block_a = chain.build_candidate_block(a.address, transactions=[], parents=[parent])
+        chain.accept_block(block_a)
+        block_b = chain.build_candidate_block(b.address, transactions=[], parents=[block_a.block_hash])
+        chain.accept_block(block_b)
+
+        self.assertGreater(chain.confirmation_score(block_a.block_hash), 0.5)
+        self.assertTrue(chain.is_confirmed(block_a.block_hash))
+        self.assertIn(block_a.block_hash, chain.confirmed_order())
+
 
 if __name__ == "__main__":
     unittest.main()

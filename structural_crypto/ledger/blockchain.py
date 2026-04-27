@@ -28,6 +28,7 @@ class Blockchain:
         min_tx_gap: int = 1,
         allow_probationary_producers: bool = False,
         allow_new_producers: bool = False,
+        confirmation_threshold: float = 1.5,
     ):
         self.difficulty = difficulty
         self.mining_reward = mining_reward
@@ -36,9 +37,11 @@ class Blockchain:
         self.min_tx_gap = min_tx_gap
         self.allow_probationary_producers = allow_probationary_producers
         self.allow_new_producers = allow_new_producers
+        self.confirmation_threshold = confirmation_threshold
         self.blocks: List[Block] = []
         self.block_by_hash: Dict[str, Block] = {}
         self.frontier: List[str] = []
+        self.children_by_hash: Dict[str, List[str]] = {}
         self.mempool: List[Transaction] = []
         self.utxos: Dict[Tuple[str, int], TxOutput] = {}
         self.sender_states: Dict[str, SenderTrajectoryState] = {}
@@ -65,6 +68,7 @@ class Blockchain:
         )
         self.blocks.append(block)
         self.block_by_hash[block.block_hash] = block
+        self.children_by_hash[block.block_hash] = []
         self.frontier = [block.block_hash]
 
     def faucet(self, recipient: str, amount: int) -> Transaction:
@@ -289,7 +293,9 @@ class Blockchain:
         self._validate_block_structure(block)
         self.blocks.append(block)
         self.block_by_hash[block.block_hash] = block
+        self.children_by_hash.setdefault(block.block_hash, [])
         for parent in block.parents:
+            self.children_by_hash.setdefault(parent, []).append(block.block_hash)
             if parent in self.frontier:
                 self.frontier.remove(parent)
         if block.block_hash not in self.frontier:
@@ -388,6 +394,8 @@ class Blockchain:
                 "producer_id": block.producer_id,
                 "producer_phase": block.producer_phase,
                 "producer_ordering_score": block.producer_ordering_score,
+                "confirmation_score": self.confirmation_score(block.block_hash),
+                "confirmed": self.is_confirmed(block.block_hash),
             }
             for block in self.blocks
         ]
@@ -425,6 +433,30 @@ class Blockchain:
                 if indegree[child] == 0:
                     ready.append(child)
         return ordered
+
+    def confirmation_score(self, block_hash: str) -> float:
+        if block_hash not in self.block_by_hash:
+            raise ValidationError("unknown block for confirmation score")
+        visited = set()
+        queue = list(self.children_by_hash.get(block_hash, []))
+        score = 0.0
+        while queue:
+            current = queue.pop(0)
+            if current in visited:
+                continue
+            visited.add(current)
+            block = self.block_by_hash[current]
+            score += max(block.producer_ordering_score, 0.0)
+            queue.extend(self.children_by_hash.get(current, []))
+        return score
+
+    def is_confirmed(self, block_hash: str) -> bool:
+        if block_hash == self.blocks[0].block_hash:
+            return True
+        return self.confirmation_score(block_hash) >= self.confirmation_threshold
+
+    def confirmed_order(self) -> List[str]:
+        return [block_hash for block_hash in self.virtual_order() if self.is_confirmed(block_hash)]
 
     def producer_is_eligible(self, producer: str) -> bool:
         state = self._identity_state(producer)
@@ -565,7 +597,9 @@ class Blockchain:
         self._apply_transaction(block.transactions[-1])
         self.blocks.append(block)
         self.block_by_hash[block.block_hash] = block
+        self.children_by_hash.setdefault(block.block_hash, [])
         for parent in block.parents:
+            self.children_by_hash.setdefault(parent, []).append(block.block_hash)
             if parent in self.frontier:
                 self.frontier.remove(parent)
         if block.block_hash not in self.frontier:
