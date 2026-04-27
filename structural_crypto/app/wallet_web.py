@@ -94,7 +94,7 @@ def render_wallet_page(chain: Blockchain, wallet: Wallet) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>PoCT Wallet</title>
+  <title>BBS-DAG Wallet</title>
   <style>
     :root {{
       --bg: #f5f0e8; --ink: #1f2a1f; --card: #fffaf2; --accent: #246a5a; --muted: #6a716a; --line: #d8cfbf;
@@ -135,9 +135,9 @@ def render_wallet_page(chain: Blockchain, wallet: Wallet) -> str:
 <body>
   <div class="wrap">
     <section class="hero">
-      <div class="eyebrow">PoCT Wallet</div>
-      <h1>{html.escape(data["wallet"]["name"])}</h1>
-      <div class="sub">Interactive local wallet page backed by your current chain state file.</div>
+      <div class="eyebrow">BBS-DAG</div>
+      <h1>BBS-DAG AI Agent Wallet Blockchain</h1>
+      <div class="sub">Interactive local wallet page for BBS-DAG, a wallet blockchain built for AI agents, backed by your current chain state file.</div>
     </section>
 
     <section class="grid">
