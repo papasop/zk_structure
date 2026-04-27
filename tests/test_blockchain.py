@@ -496,6 +496,43 @@ class BlockchainTests(unittest.TestCase):
         kept = [txid for txid in (tx1.txid, tx2.txid) if txid in accepted]
         self.assertEqual(len(kept), 1)
 
+    def test_blockchain_state_roundtrip_preserves_views(self) -> None:
+        chain = Blockchain(
+            difficulty=1,
+            mining_reward=5,
+            allow_new_producers=True,
+            confirmation_threshold=0.5,
+        )
+        alice = Wallet("alice", "alice-seed")
+        bob = Wallet("bob", "bob-seed")
+        miner = Wallet("miner", "miner-seed")
+        chain.faucet(alice.address, 50)
+        policy = PolicyCommitment.from_values(epsilon=10.0, max_amount=25)
+
+        tx = chain.build_transaction(
+            key=alice.key,
+            recipients=[(bob.address, 10)],
+            policy=policy,
+            timestamp=100,
+        )
+        chain.add_transaction(tx, signer_seed=alice.seed)
+        chain.mine_block(miner.address)
+
+        exported = chain.export_state()
+        restored = Blockchain.from_state(exported)
+
+        self.assertEqual(restored.chain_summary(), chain.chain_summary())
+        self.assertEqual(restored.frontier, chain.frontier)
+        self.assertEqual(restored.virtual_order(), chain.virtual_order())
+        self.assertEqual(restored.confirmed_order(), chain.confirmed_order())
+        self.assertEqual(restored.trajectory_summary(), chain.trajectory_summary())
+
+    def test_export_state_json_is_stable_json(self) -> None:
+        chain = Blockchain(difficulty=1, mining_reward=5, allow_new_producers=True)
+        payload = chain.export_state_json()
+        self.assertIsInstance(payload, str)
+        self.assertIn("\"blocks\"", payload)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,12 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from dataclasses import asdict
 from dataclasses import replace
 from typing import Dict, Iterable, List, Optional, Tuple
 
 from structural_crypto.consensus import ColdStartEngine, ColdStartState
 from structural_crypto.crypto.policy import PolicyCommitment
-from structural_crypto.crypto.signature import StructurePrivateKey
+from structural_crypto.crypto.signature import StructurePrivateKey, StructureSignature
 from .models import Block, SenderTrajectoryState, Transaction, TxInput, TxOutput
 
 
@@ -48,6 +49,84 @@ class Blockchain:
         self.identity_states: Dict[str, ColdStartState] = {}
         self.cold_start = ColdStartEngine()
         self._create_genesis_block()
+
+    @classmethod
+    def from_state(cls, state: dict) -> "Blockchain":
+        chain = cls(
+            difficulty=state["config"]["difficulty"],
+            mining_reward=state["config"]["mining_reward"],
+            rate_limit_window=state["config"]["rate_limit_window"],
+            max_txs_per_window=state["config"]["max_txs_per_window"],
+            min_tx_gap=state["config"]["min_tx_gap"],
+            allow_probationary_producers=state["config"]["allow_probationary_producers"],
+            allow_new_producers=state["config"]["allow_new_producers"],
+            confirmation_threshold=state["config"]["confirmation_threshold"],
+        )
+        chain.blocks = [chain._block_from_dict(item) for item in state["blocks"]]
+        chain.block_by_hash = {block.block_hash: block for block in chain.blocks}
+        chain.children_by_hash = {
+            block.block_hash: [] for block in chain.blocks
+        }
+        for block in chain.blocks:
+            for parent in block.parents:
+                chain.children_by_hash.setdefault(parent, []).append(block.block_hash)
+        chain.frontier = list(state["frontier"])
+        chain.mempool = [chain._transaction_from_dict(item) for item in state["mempool"]]
+        chain.utxos = {
+            (entry["txid"], entry["output_index"]): TxOutput(
+                amount=entry["output"]["amount"],
+                recipient=entry["output"]["recipient"],
+            )
+            for entry in state["utxos"]
+        }
+        chain.sender_states = {
+            sender: SenderTrajectoryState(**sender_state)
+            for sender, sender_state in state["sender_states"].items()
+        }
+        chain.identity_states = {
+            sender: ColdStartState(**identity_state)
+            for sender, identity_state in state["identity_states"].items()
+        }
+        return chain
+
+    def export_state(self) -> dict:
+        return {
+            "config": {
+                "difficulty": self.difficulty,
+                "mining_reward": self.mining_reward,
+                "rate_limit_window": self.rate_limit_window,
+                "max_txs_per_window": self.max_txs_per_window,
+                "min_tx_gap": self.min_tx_gap,
+                "allow_probationary_producers": self.allow_probationary_producers,
+                "allow_new_producers": self.allow_new_producers,
+                "confirmation_threshold": self.confirmation_threshold,
+            },
+            "blocks": [self._block_to_dict(block) for block in self.blocks],
+            "frontier": list(self.frontier),
+            "mempool": [self._transaction_to_dict(tx) for tx in self.mempool],
+            "utxos": [
+                {
+                    "txid": txid,
+                    "output_index": output_index,
+                    "output": {
+                        "amount": output.amount,
+                        "recipient": output.recipient,
+                    },
+                }
+                for (txid, output_index), output in self.utxos.items()
+            ],
+            "sender_states": {
+                sender: asdict(state)
+                for sender, state in self.sender_states.items()
+            },
+            "identity_states": {
+                sender: asdict(state)
+                for sender, state in self.identity_states.items()
+            },
+        }
+
+    def export_state_json(self) -> str:
+        return json.dumps(self.export_state(), sort_keys=True, separators=(",", ":"))
 
     def _create_genesis_block(self) -> None:
         block = Block(
@@ -758,6 +837,103 @@ class Blockchain:
             "merkle_root": merkle_root,
         }
         return self._hash_json(payload)
+
+    @staticmethod
+    def _transaction_to_dict(tx: Transaction) -> dict:
+        return {
+            "txid": tx.txid,
+            "sender": tx.sender,
+            "trajectory_id": tx.trajectory_id,
+            "prev": tx.prev,
+            "sequence": tx.sequence,
+            "epoch": tx.epoch,
+            "policy_hash": tx.policy_hash,
+            "delta": tx.delta,
+            "sender_head_commitment": tx.sender_head_commitment,
+            "inputs": [
+                {
+                    "prev_txid": item.prev_txid,
+                    "output_index": item.output_index,
+                    "owner": item.owner,
+                }
+                for item in tx.inputs
+            ],
+            "outputs": [
+                {
+                    "amount": item.amount,
+                    "recipient": item.recipient,
+                }
+                for item in tx.outputs
+            ],
+            "message": tx.message,
+            "policy": {
+                "epsilon": tx.policy.epsilon,
+                "max_amount": tx.policy.max_amount,
+                "allowed_recipients": list(tx.policy.allowed_recipients),
+            },
+            "signature": asdict(tx.signature),
+            "timestamp": tx.timestamp,
+        }
+
+    @staticmethod
+    def _transaction_from_dict(data: dict) -> Transaction:
+        return Transaction(
+            txid=data["txid"],
+            sender=data["sender"],
+            trajectory_id=data["trajectory_id"],
+            prev=data["prev"],
+            sequence=data["sequence"],
+            epoch=data["epoch"],
+            policy_hash=data["policy_hash"],
+            delta=data["delta"],
+            sender_head_commitment=data["sender_head_commitment"],
+            inputs=[TxInput(**item) for item in data["inputs"]],
+            outputs=[TxOutput(**item) for item in data["outputs"]],
+            message=data["message"],
+            policy=PolicyCommitment.from_values(
+                epsilon=data["policy"]["epsilon"],
+                max_amount=data["policy"]["max_amount"],
+                allowed_recipients=data["policy"]["allowed_recipients"],
+            ),
+            signature=StructureSignature(**data["signature"]),
+            timestamp=data["timestamp"],
+        )
+
+    def _block_to_dict(self, block: Block) -> dict:
+        return {
+            "index": block.index,
+            "parents": list(block.parents),
+            "timestamp": block.timestamp,
+            "nonce": block.nonce,
+            "difficulty": block.difficulty,
+            "producer_id": block.producer_id,
+            "producer_phase": block.producer_phase,
+            "producer_ordering_score": block.producer_ordering_score,
+            "aggregate_delta": block.aggregate_delta,
+            "trajectory_commitment": block.trajectory_commitment,
+            "virtual_order_hint": block.virtual_order_hint,
+            "transactions": [self._transaction_to_dict(tx) for tx in block.transactions],
+            "merkle_root": block.merkle_root,
+            "block_hash": block.block_hash,
+        }
+
+    def _block_from_dict(self, data: dict) -> Block:
+        return Block(
+            index=data["index"],
+            parents=list(data["parents"]),
+            timestamp=data["timestamp"],
+            nonce=data["nonce"],
+            difficulty=data["difficulty"],
+            producer_id=data["producer_id"],
+            producer_phase=data["producer_phase"],
+            producer_ordering_score=data["producer_ordering_score"],
+            aggregate_delta=data["aggregate_delta"],
+            trajectory_commitment=data["trajectory_commitment"],
+            virtual_order_hint=data["virtual_order_hint"],
+            transactions=[self._transaction_from_dict(tx) for tx in data["transactions"]],
+            merkle_root=data["merkle_root"],
+            block_hash=data["block_hash"],
+        )
 
     def _validate_trajectory(self, tx: Transaction) -> None:
         sender_state, pending_txs = self._sender_context(tx.sender)
