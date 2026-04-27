@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
-from typing import Any, Dict, List
+from dataclasses import asdict, dataclass, field
+from typing import Any, Dict, List, Optional
 
 from structural_crypto.crypto.policy import PolicyCommitment
 from structural_crypto.crypto.signature import StructureSignature
@@ -26,6 +26,13 @@ class TxOutput:
 class Transaction:
     txid: str
     sender: str
+    trajectory_id: Optional[str]
+    prev: Optional[str]
+    sequence: int
+    epoch: int
+    policy_hash: str
+    delta: float
+    sender_head_commitment: str
     inputs: List[TxInput]
     outputs: List[TxOutput]
     message: str
@@ -45,6 +52,17 @@ class Transaction:
         return data
 
 
+@dataclass
+class SenderTrajectoryState:
+    sender: str
+    trajectory_id: Optional[str] = None
+    head_txid: Optional[str] = None
+    sequence: int = -1
+    recent_epochs: List[int] = field(default_factory=list)
+    phase: str = "new"
+    branch_conflicts: int = 0
+
+
 @dataclass(frozen=True)
 class Block:
     index: int
@@ -55,4 +73,3 @@ class Block:
     transactions: List[Transaction]
     merkle_root: str
     block_hash: str
-

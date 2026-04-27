@@ -16,7 +16,7 @@ def run_demo() -> dict:
     chain.faucet(alice.address, 100)
 
     policy = PolicyCommitment.from_values(
-        epsilon=3.0,
+        epsilon=10.0,
         max_amount=30,
         allowed_recipients=[bob.address],
     )
@@ -32,7 +32,7 @@ def run_demo() -> dict:
         "block_index": block.index,
         "block_hash": block.block_hash,
         "balances": chain.balances(),
+        "trajectories": chain.trajectory_summary(),
         "valid": chain.validate_chain(),
         "summary": chain.chain_summary(),
     }
-
