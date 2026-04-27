@@ -292,6 +292,24 @@
 
     <section class="grid-two">
       <div class="card">
+        <div class="label">Faucet</div>
+        <h2 class="section-title">Build Faucet Request</h2>
+        <div class="hint">
+          For static GitHub Pages mode, this creates a faucet request payload targeting the current wallet address.
+          You can copy it into a local faucet workflow or a future online testnet faucet endpoint.
+        </div>
+        <div class="stack" style="margin-top: 14px;">
+          <input id="faucetAmount" type="text" placeholder="Faucet amount">
+          <div class="row">
+            <button class="primary" id="buildFaucetRequest">Build Faucet Request</button>
+            <button class="secondary" id="copyFaucetRequest">Copy Faucet JSON</button>
+          </div>
+          <div class="status" id="faucetStatus"></div>
+          <pre id="faucetSnapshot">{}</pre>
+        </div>
+      </div>
+
+      <div class="card">
         <div class="label">Send</div>
         <h2 class="section-title">Create Transaction Draft</h2>
         <div class="hint">
@@ -317,6 +335,36 @@
         </div>
         <div id="historyList" class="tx-list" style="margin-top: 14px;">
           <div class="empty">No chain loaded yet.</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="grid-two">
+      <div class="card">
+        <div class="label">Produce</div>
+        <h2 class="section-title">Build Produce Request</h2>
+        <div class="hint">
+          This creates a producer request payload for the current wallet address. Use it with your local node workflow when the wallet has producer rights.
+        </div>
+        <div class="stack" style="margin-top: 14px;">
+          <div class="row">
+            <button class="primary" id="buildProduceRequest">Build Produce Request</button>
+            <button class="secondary" id="copyProduceRequest">Copy Produce JSON</button>
+          </div>
+          <div class="status" id="produceStatus"></div>
+          <pre id="produceSnapshot">{}</pre>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="label">Connection</div>
+        <h2 class="section-title">Static Wallet Mode</h2>
+        <div class="hint">
+          This GitHub Pages wallet still runs entirely in-browser. It does not send your mnemonic anywhere and currently builds request payloads rather than broadcasting directly.
+        </div>
+        <div class="stack" style="margin-top: 14px;">
+          <input id="nodeEndpoint" type="text" placeholder="Future node endpoint (optional)" disabled>
+          <div class="status">Direct HTTP broadcast can be added later once the node exposes a browser-safe API.</div>
         </div>
       </div>
     </section>
@@ -373,6 +421,8 @@
     let currentWallet = {};
     let currentChain = {};
     let currentDraft = {};
+    let currentFaucetRequest = {};
+    let currentProduceRequest = {};
 
     async function sha256Hex(text) {
       const encoded = new TextEncoder().encode(text);
@@ -523,6 +573,40 @@
       document.getElementById("draftStatus").textContent = "Transaction draft built locally.";
     }
 
+    function buildFaucetRequest() {
+      const amount = Number(document.getElementById("faucetAmount").value.trim());
+      if (!currentWallet.address) {
+        document.getElementById("faucetStatus").textContent = "Load or generate a wallet first.";
+        return;
+      }
+      if (!Number.isFinite(amount) || amount <= 0) {
+        document.getElementById("faucetStatus").textContent = "Enter a valid faucet amount.";
+        return;
+      }
+      currentFaucetRequest = {
+        kind: "poct-faucet-request",
+        recipient: currentWallet.address,
+        amount,
+        generated_at: new Date().toISOString(),
+      };
+      document.getElementById("faucetSnapshot").textContent = JSON.stringify(currentFaucetRequest, null, 2);
+      document.getElementById("faucetStatus").textContent = "Faucet request built locally.";
+    }
+
+    function buildProduceRequest() {
+      if (!currentWallet.address) {
+        document.getElementById("produceStatus").textContent = "Load or generate a wallet first.";
+        return;
+      }
+      currentProduceRequest = {
+        kind: "poct-produce-request",
+        producer: currentWallet.address,
+        generated_at: new Date().toISOString(),
+      };
+      document.getElementById("produceSnapshot").textContent = JSON.stringify(currentProduceRequest, null, 2);
+      document.getElementById("produceStatus").textContent = "Produce request built locally.";
+    }
+
     async function loadJsonFile(file) {
       const text = await file.text();
       return JSON.parse(text);
@@ -540,11 +624,23 @@
       await navigator.clipboard.writeText(currentWallet.address);
       document.getElementById("walletStatus").textContent = "Address copied.";
     });
+    document.getElementById("buildFaucetRequest").addEventListener("click", buildFaucetRequest);
+    document.getElementById("copyFaucetRequest").addEventListener("click", async () => {
+      if (!currentFaucetRequest.kind) return;
+      await navigator.clipboard.writeText(JSON.stringify(currentFaucetRequest, null, 2));
+      document.getElementById("faucetStatus").textContent = "Faucet request copied.";
+    });
     document.getElementById("buildDraft").addEventListener("click", buildDraft);
     document.getElementById("copyDraft").addEventListener("click", async () => {
       if (!currentDraft.kind) return;
       await navigator.clipboard.writeText(JSON.stringify(currentDraft, null, 2));
       document.getElementById("draftStatus").textContent = "Draft copied.";
+    });
+    document.getElementById("buildProduceRequest").addEventListener("click", buildProduceRequest);
+    document.getElementById("copyProduceRequest").addEventListener("click", async () => {
+      if (!currentProduceRequest.kind) return;
+      await navigator.clipboard.writeText(JSON.stringify(currentProduceRequest, null, 2));
+      document.getElementById("produceStatus").textContent = "Produce request copied.";
     });
     document.getElementById("mnemonic").addEventListener("input", () => {
       refreshWallet();
