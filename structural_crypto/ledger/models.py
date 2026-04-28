@@ -39,6 +39,13 @@ class Transaction:
     policy: PolicyCommitment
     signature: StructureSignature
     timestamp: int
+    identity_id: Optional[str] = None
+    action_type: str = "transfer"
+    action_key: Optional[str] = None
+    approvals: List[Dict[str, Any]] = field(default_factory=list)
+    action_payload: Dict[str, Any] = field(default_factory=dict)
+    recovery_policy_version: Optional[int] = None
+    pending_recovery_id: Optional[str] = None
 
     def total_output(self) -> int:
         return sum(output.amount for output in self.outputs)
@@ -73,6 +80,8 @@ class Block:
     producer_id: str
     producer_phase: str
     producer_ordering_score: float
+    producer_weight_snapshot: float
+    dynamic_k_snapshot: float
     aggregate_delta: float
     trajectory_commitment: str
     virtual_order_hint: str
@@ -83,3 +92,52 @@ class Block:
     @property
     def prev_hash(self) -> str:
         return self.parents[0] if self.parents else "0" * 64
+
+
+@dataclass(frozen=True)
+class FinalityCommitteeMember:
+    identity_id: str
+    phase: str
+    ordering_score: float
+    finality_weight: float
+    committee_epoch: int
+
+
+@dataclass(frozen=True)
+class FinalityCertificate:
+    epoch: int
+    round: int
+    vote_type: str
+    checkpoint_id: str
+    quorum_weight: float
+    committee_digest: str
+    signer_set: List[str]
+    certificate_digest: str
+
+
+@dataclass(frozen=True)
+class FinalityVote:
+    epoch: int
+    round: int
+    vote_type: str
+    checkpoint_id: str
+    committee_digest: str
+    voter_id: str
+    voter_weight: float
+    vote_digest: str
+
+
+@dataclass(frozen=True)
+class FinalityCheckpoint:
+    checkpoint_id: str
+    epoch: int
+    round: int
+    anchor_block_hash: str
+    finalized_parent: Optional[str]
+    ordered_prefix_end: int
+    ordered_prefix_digest: str
+    confirmed_batch_digest: str
+    committee_digest: str
+    config_digest: str
+    lock_certificate: Optional[FinalityCertificate] = None
+    finalize_certificate: Optional[FinalityCertificate] = None

@@ -101,6 +101,12 @@ def main() -> None:
     virtual_parser = subparsers.add_parser("show-virtual", help="show virtual DAG order from a saved state")
     virtual_parser.add_argument("--path", help="path to the state JSON file")
 
+    dagknight_parser = subparsers.add_parser(
+        "show-dagknight",
+        help="show dynamic k, blue set, and weighted anticone views from a saved state",
+    )
+    dagknight_parser.add_argument("--path", help="path to the state JSON file")
+
     resolved_parser = subparsers.add_parser(
         "show-resolved",
         help="show accepted and rejected transactions under virtual conflict resolution",
@@ -117,6 +123,17 @@ def main() -> None:
         choices=["confirmed", "virtual"],
         default="confirmed",
         help="feed scope to export",
+    )
+
+    handoff_parser = subparsers.add_parser(
+        "show-l1-handoff",
+        help="show the exported L1 handoff package from a saved state",
+    )
+    handoff_parser.add_argument("--path", help="path to the state JSON file")
+    handoff_parser.add_argument(
+        "--confirmed-only",
+        action="store_true",
+        help="force confirmed handoff even if a finalized checkpoint is available",
     )
 
     wallet_create_parser = subparsers.add_parser("wallet-create", help="create a local CLI wallet file")
@@ -374,6 +391,16 @@ def main() -> None:
         )
         return
 
+    if args.command == "show-dagknight":
+        print(
+            json.dumps(
+                chain.dagknight_summary(),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
     if args.command == "show-resolved":
         print(
             json.dumps(
@@ -392,6 +419,16 @@ def main() -> None:
         print(
             json.dumps(
                 chain.export_l1_feed(confirmed_only=confirmed_only),
+                indent=2,
+                sort_keys=True,
+            )
+        )
+        return
+
+    if args.command == "show-l1-handoff":
+        print(
+            json.dumps(
+                chain.export_l1_handoff(prefer_finalized=not args.confirmed_only),
                 indent=2,
                 sort_keys=True,
             )

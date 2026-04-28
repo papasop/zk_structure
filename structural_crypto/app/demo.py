@@ -46,6 +46,7 @@ def run_demo() -> dict:
         "confirmed_l1_batch": chain.confirmed_l1_batch(),
         "confirmed_rewards": chain.confirmed_reward_totals(),
         "export_l1_feed": chain.export_l1_feed(),
+        "export_l1_handoff": chain.export_l1_handoff(),
         "frontier": list(chain.frontier),
         "resolved_virtual_blocks": chain.resolved_virtual_blocks(),
         "trajectories": chain.trajectory_summary(),

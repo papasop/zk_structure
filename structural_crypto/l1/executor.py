@@ -51,6 +51,9 @@ class SimpleL1Executor:
         self.last_checkpoint = checkpoint
         return checkpoint
 
+    def apply_handoff(self, handoff: dict) -> L1Checkpoint:
+        return self.apply_batch(handoff["batch"])
+
     @staticmethod
     def batch_digest(batch: dict) -> str:
         stable_view = {
